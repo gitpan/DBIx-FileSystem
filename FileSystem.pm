@@ -22,13 +22,19 @@
 # Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 # Last Update:		$Author: marvin $
-# Update Date:		$Date: 2003/07/21 15:29:34 $
+# Update Date:		$Date: 2003/09/22 14:56:55 $
 # Source File:		$Source: /home/cvsroot/tools/FileSystem/FileSystem.pm,v $
-# CVS/RCS Revision:	$Revision: 1.9 $
+# CVS/RCS Revision:	$Revision: 1.11 $
 # Status:		$State: Exp $
 # 
 # CVS/RCS Log:
 # $Log: FileSystem.pm,v $
+# Revision 1.11  2003/09/22 14:56:55  marvin
+# fixed deprecated use of refs
+#
+# Revision 1.10  2003/08/11 13:58:27  marvin
+# extended %vdirs check at startup
+#
 # Revision 1.9  2003/07/21 15:29:34  marvin
 # added missing t/use.t to MANIFEST
 #
@@ -65,7 +71,7 @@ use strict;
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
 use Exporter;
 
-$DBIx::FileSystem::VERSION = '1.07';
+$DBIx::FileSystem::VERSION = '1.08';
 
 @ISA = qw( Exporter );
 @EXPORT_OK = qw(
@@ -930,8 +936,10 @@ sub check_vdirs_struct() {
       }
     }
 
+    my %varnames = ();	# duplicate check: key=varname  value=column name
     my $cols = $vdirs->{$dir}{cols};
     foreach my $col (keys(%{$cols} )) {
+      # check for 'type' / 'ref'
       unless( defined $cols->{$col}{type} || defined $cols->{$col}{ref} ) {
 	print "$pre dir '$dir', column '$col', either 'type' or 'ref' must be set\n";
 	return 1;
@@ -967,6 +975,15 @@ sub check_vdirs_struct() {
 	print "$pre dir '$dir', column '$col', missing elem 'pos'\n"; 
 	return 1;
       }
+
+      # check for duplicate var
+      my $varname = $cols->{$col}{var};
+      if( defined $varnames{ $varname } ) {
+	print "$pre dir '$dir', var '$varname' used for columns '$col' and '$varnames{$varname}'\n";
+	return 1;
+      }
+      $varnames{ $varname } = $col;
+
     }
   }
   return 0;
@@ -1121,7 +1138,7 @@ sub print_file() {
   # prepare db query
   my $fnc = $vdirs->{$vwd}{fnamcol};
   my $cols = $vdirs->{$vwd}{cols};
-  foreach my $col (sort {%{$cols}->{$a}{pos} <=> %{$cols}->{$b}{pos}} 
+  foreach my $col (sort {$cols->{$a}{pos} <=> $cols->{$b}{pos}} 
 		   keys(%{$cols}) ) 
     {
       next if $col eq $fnc;
@@ -1203,7 +1220,7 @@ sub print_file() {
     if( $print_it == 1 ) {
       # command 'cat/vi': long version
       print $FH "$newfilemsg" ;
-      print $FH "#\n# Settings for $vdirs->{$vwd}{cols}{$fnc}{var} '$fnam'" ;
+      print $FH "#\n# Settings for $vdirs->{$vwd}{cols}{$fnc}{desc} '$fnam'" ;
       if( $vdirs->{$vwd}{defaultfile} and 
 	  $vdirs->{$vwd}{defaultfile} ne $fnam ) {
 	print $FH " (defaults: '$vdirs->{$vwd}{defaultfile}')";
@@ -1894,10 +1911,13 @@ The COLUMN_SETTING defines the layout of a column (database column).
     # for the columname for display or edit/vi.
     var => 'VarName',		
 
-    # mandatory: One line description what this
+    # mandatory: Textual description what this
     # variable is good for. Will be show up as
     # a comment when displaying (cat) or editing
-    # (vi) this file.
+    # (vi) this file. Long lines can be split with
+    # newline '\n'. When this column is 'fnamcol'
+    # the text whill show up in header like:
+    # "Settings for <desc-here>  <filename>
     desc => "...text...",	
 
     # mandatory: A counter used to sort the columns

@@ -5,9 +5,9 @@
 # pawactl   : packet warehouse control program
 #
 # Last Update:		$Author: marvin $
-# Update Date:		$Date: 2003/07/17 17:32:24 $
+# Update Date:		$Date: 2003/08/11 13:58:27 $
 # Source File:		$Source: /home/cvsroot/tools/FileSystem/pawactl,v $
-# CVS/RCS Revision:	$Revision: 1.5 $
+# CVS/RCS Revision:	$Revision: 1.6 $
 # Status:		$State: Exp $
 # 
 # Imagine a warehouse for packet distribution: Some well known senders are
@@ -76,6 +76,9 @@
 #
 # CVS/RCS Log:
 # $Log: pawactl,v $
+# Revision 1.6  2003/08/11 13:58:27  marvin
+# extended %vdirs check at startup
+#
 # Revision 1.5  2003/07/17 17:32:24  marvin
 # pawactl custom command example hello --> count
 #
@@ -134,8 +137,8 @@ my %vdirs =
        { type	=> 'char',			# mandatory: DB type
 	 len	=> 10,				# mandatory (edit = 1 !)
 	 colopt=> 'PRIMARY KEY',		# optional, but useful here
-	 var 	=> 'SourceName',		# mandatory, variable name
-	 desc	=> "Symbolic name of the source",# mandatory, description
+	 var 	=> 'Filename',			# mandatory, variable name
+	 desc	=> "source",			# mandatory, description
 	 pos	=> $pos++,			# mandatory, auto incr position
        },
        srcid => 				# columnname in DB
@@ -176,8 +179,8 @@ my %vdirs =
        { type	=> 'char',			# mandatory: DB type
 	 len	=> 14,				# mandatory (edit = 1 !)
 	 colopt=> 'PRIMARY KEY',		# optional, but useful here
-	 var 	=> 'Destination',		# mandatory, variable name
-	 desc	=> "The name of the destination",# mandatory, description
+	 var 	=> 'Filename',			# mandatory, variable name
+	 desc	=> "destination",		# mandatory, description
 	 pos	=> $pos++,			# mandatory, auto incr position
        },
        comment => 					# columnname in DB
@@ -231,8 +234,8 @@ my %vdirs =
      { fname => 				# columnname in DB
        { type	=> 'char',			# mandatory: DB type char
 	 len	=> 6,				# optional  here
-	 var 	=> 'PacketID',			# mandatory, variable name
-	 desc	=> "The ID of a packet",	# mandatory, description
+	 var 	=> 'Filename',			# mandatory, variable name
+	 desc	=> "packet id",			# mandatory, description
 	 pos	=> $pos++,			# mandatory, auto incr position
        },
        itim => 					# columnname in DB
