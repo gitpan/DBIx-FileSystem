@@ -4,3 +4,4 @@ MANIFEST
 Makefile.PL
 pawactl
 README
+t/use.t

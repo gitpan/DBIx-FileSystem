@@ -22,13 +22,16 @@
 # Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 # Last Update:		$Author: marvin $
-# Update Date:		$Date: 2003/07/17 17:32:24 $
+# Update Date:		$Date: 2003/07/21 15:29:34 $
 # Source File:		$Source: /home/cvsroot/tools/FileSystem/FileSystem.pm,v $
-# CVS/RCS Revision:	$Revision: 1.8 $
+# CVS/RCS Revision:	$Revision: 1.9 $
 # Status:		$State: Exp $
 # 
 # CVS/RCS Log:
 # $Log: FileSystem.pm,v $
+# Revision 1.9  2003/07/21 15:29:34  marvin
+# added missing t/use.t to MANIFEST
+#
 # Revision 1.8  2003/07/17 17:32:24  marvin
 # pawactl custom command example hello --> count
 #
@@ -62,7 +65,7 @@ use strict;
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
 use Exporter;
 
-$DBIx::FileSystem::VERSION = '1.06';
+$DBIx::FileSystem::VERSION = '1.07';
 
 @ISA = qw( Exporter );
 @EXPORT_OK = qw(

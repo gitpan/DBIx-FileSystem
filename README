@@ -125,6 +125,10 @@ CHANGES:
 	- added possibility to add custom commands
 	- rmcheck and volok callbacks: added param dbh
 
+1.07	21 july 2003
+	- added missing t/use.t to MANIFEST
+
+
 COPYRIGHT:
 ----------
 
@@ -180,9 +184,9 @@ Workaround: Do a test of all required modules.
 CVS INFO:
 --------
 Last Update:		$Author: marvin $
-Update Date:		$Date: 2003/07/16 18:32:33 $
+Update Date:		$Date: 2003/07/21 15:29:34 $
 Source File:		$Source: /home/cvsroot/tools/FileSystem/README,v $
-CVS/RCS Revision:	$Revision: 1.7 $
+CVS/RCS Revision:	$Revision: 1.8 $
 Status:			$State: Exp $
 
 
