@@ -100,6 +100,30 @@ CHANGES:
 	- volok option added
 	- vi now can create new files (usefull with 'NOT NULL' constraint)
 
+1.02	7 May 2003
+	- added (dummy) t/dummy.t testing
+	- internal release
+
+1.03	8 May 2003
+	- rename: t/dummy.t to t/use.t
+
+1.04	16 June 2003
+	- cp: missing filenamecheck for new file added
+	- vdirs: desc now may be multiline by adding '\n' to the text
+
+1.05	10 July 2003
+	- the valok custom check functions now get a second parameter holding
+	  a hash ref of all variables read in from the to-be-edited-file,
+	  key is the columnname (cols)
+	- pawactl modify to show an example how to use the above hashref
+
+1.06	14 July 2003
+	- comcol in %vdirs hash introduced: define a column that will hold
+	  comments for a file
+	- introduced new commands 'll' and 'ld' 
+	- check length of fnamcol column againtst $LS_COL_WIDTH
+	- added possibility to add custom commands
+	- rmcheck and volok callbacks: added param dbh
 
 COPYRIGHT:
 ----------
@@ -139,22 +163,26 @@ INSTALLATION:
 
 1.   perl Makefile.PL
 2.   make
-3.   make install
+3.   make test
+4.   make install
 
-( 1. to 2. as normal user, not as root ! )
+( 1. to 3. as normal user, not as root ! )
 
 
 TESTING:
 --------
 
-no test available.
+The test currently is only a dummy because I don't know how to test
+an interactive shell across many different platforms and terminals.
+Workaround: Do a test of all required modules.
+
 
 CVS INFO:
 --------
 Last Update:		$Author: marvin $
-Update Date:		$Date: 2003/04/09 11:07:10 $
+Update Date:		$Date: 2003/07/16 18:32:33 $
 Source File:		$Source: /home/cvsroot/tools/FileSystem/README,v $
-CVS/RCS Revision:	$Revision: 1.1.1.1 $
+CVS/RCS Revision:	$Revision: 1.7 $
 Status:			$State: Exp $
 
 

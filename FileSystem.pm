@@ -22,13 +22,35 @@
 # Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 # Last Update:		$Author: marvin $
-# Update Date:		$Date: 2003/04/09 11:07:10 $
+# Update Date:		$Date: 2003/07/17 17:32:24 $
 # Source File:		$Source: /home/cvsroot/tools/FileSystem/FileSystem.pm,v $
-# CVS/RCS Revision:	$Revision: 1.1.1.1 $
+# CVS/RCS Revision:	$Revision: 1.8 $
 # Status:		$State: Exp $
 # 
 # CVS/RCS Log:
 # $Log: FileSystem.pm,v $
+# Revision 1.8  2003/07/17 17:32:24  marvin
+# pawactl custom command example hello --> count
+#
+# Revision 1.7  2003/07/16 18:35:45  marvin
+# updated doku
+#
+# Revision 1.6  2003/07/16 18:32:33  marvin
+# Added custom commands
+# valok and rmcheck now get $dbh param
+#
+# Revision 1.5  2003/07/11 17:59:17  marvin
+# valok now gets additional parameter: a hashref of all values read from file
+#
+# Revision 1.4  2003/07/11 15:40:56  marvin
+# multiline descriptions, cp now checks filename
+#
+# Revision 1.3  2003/05/09 18:09:59  afrika
+# rename t/dummy.t to t/use.t
+#
+# Revision 1.2  2003/05/08 18:26:06  afrika
+# added t/dummy.t dummy test
+#
 # Revision 1.1.1.1  2003/04/09 11:07:10  marvin
 # Imported Sources
 #
@@ -40,7 +62,7 @@ use strict;
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
 use Exporter;
 
-$DBIx::FileSystem::VERSION = '1.01';
+$DBIx::FileSystem::VERSION = '1.06';
 
 @ISA = qw( Exporter );
 @EXPORT_OK = qw(
@@ -48,7 +70,7 @@ $DBIx::FileSystem::VERSION = '1.01';
 	     &mainloop
 	     );
 
-use vars qw( $OUT $vwd );
+use vars qw( $OUT $vwd $dbh );
 
 use DBI;
 use Term::ReadLine;
@@ -60,16 +82,18 @@ use Fcntl;
 # c o m m a n d s
 ########################################################################
 my %commands =
-  ('cd'      => { func => \&com_cd,
+  ('cd'=> 	{ func => \&com_cd,
 		  doc => "change to directory: 'cd DIR'" },
-   'help'    => { func => \&com_help,
+   'help' => 	{ func => \&com_help,
 		  doc => "display help text: 'help [command]'" },
-   'quit'    => { func => \&com_quit,
+   'quit' => 	{ func => \&com_quit,
 		  doc => "quit it" },
-   'ls'      => { func => \&com_ls,
+   'ls' => 	{ func => \&com_ls,
 		  doc => "list dirs and files" },
-   'new' => 	{ func => \&com_new,
-		  doc => "create new file with variables set to NULL: 'new FILE'" },
+   'ld'=> 	{ func => \&com_ld,
+		  doc => "list long dirs and files with comments" },
+   'll' => 	{ func => \&com_ll,
+		  doc => "list long files with comments" },
    'rm' => 	{ func => \&com_rm,
 		  doc => "remove file: 'rm FILE'" },
    'cp' => 	{ func => \&com_cp,
@@ -85,6 +109,7 @@ my %commands =
    'wrefs' => 	{ func => \&com_wref,
 		  doc => "show who references a file: 'wrefs FILE'" },
   );
+
 
 ########################################################################
 # C o n s t a n t s
@@ -113,7 +138,7 @@ $EDITOR = "/usr/bin/vi" unless $EDITOR;
 my $vdirs;	# reference to vdir hash
 # $vwd ;	# current virtual working directory (exported)
 
-my $dbh;
+# my $dbh;	# database handle (exported)
 my $term;
 # $OUT;		# the stdout (exported)
 
@@ -125,9 +150,27 @@ my $VERSION;
 my $PRG;	# program name of the shell
 
 
-sub mainloop(\%$$$$$) {
+sub mainloop(\%$$$$$\%) {
 
-  ($vdirs,$PRG,$VERSION,$DBHOST,$DBUSER,$DBPWD) = @_;
+  my $customcmds;
+  ($vdirs,$PRG,$VERSION,$DBHOST,$DBUSER,$DBPWD,$customcmds) = @_;
+
+  # merge custom commands, if any
+  if( defined $customcmds ) {
+    foreach my $cucmd (keys (%{$customcmds} ) ) {
+      if( defined $commands{$cucmd} ) {
+	die "$PRG: redefinition of command '$cucmd' by customcommands";
+      }
+      unless( defined $customcmds->{$cucmd}{func} ) {
+	die "$PRG: customcommand '$cucmd': elem func not set";
+      }
+      unless( defined $customcmds->{$cucmd}{doc} ) {
+	die "$PRG: customcommand '$cucmd': elem doc not set";
+      }
+      $commands{$cucmd} = $customcmds->{$cucmd};
+    }
+  }
+
   # connect to db
   ($dbh = DBI->connect( $DBHOST, $DBUSER, $DBPWD,
      {ChopBlanks => 1, AutoCommit => 1, PrintError => 0})) 
@@ -276,6 +319,105 @@ sub com_ls() {
 }
 
 ########################################################################
+# com_ld()
+#
+sub com_ld() {
+  my @files;
+  my @com;	# comments
+  my $i;
+  my $x = shift;
+  if( defined $x ) {
+    print $OUT "ls: usage: $commands{ld}->{doc}\n";
+    return 0;
+  }
+
+  # get dirs
+  foreach $i (sort keys(%{$vdirs}) ) {
+    push @files, "($i)";
+    push @com, $vdirs->{$i}{desc};
+  }
+
+  # show it
+  my $maxlen = 0;
+  foreach $i (@files) {
+    if( length($i) > $maxlen ) {$maxlen = length($i); }
+  }
+
+  for( $i=0; $i<=$#files; $i++ ) {
+    printf $OUT "%-${maxlen}s| %s\n", $files[$i], $com[$i];
+  }
+  print $OUT "\n";
+  com_ll();
+  return 0;
+}
+
+########################################################################
+# com_ll()
+#
+sub com_ll() {
+  my @files;
+  my @com;	# comments
+  my $i;
+  my $c;
+
+  my $x = shift;
+  if( defined $x ) {
+    print $OUT "ls: usage: $commands{ll}->{doc}\n";
+    return 0;
+  }
+
+  # get files
+  if( defined $vdirs->{$vwd}{comcol} ) {
+    my $comcol = $vdirs->{$vwd}{comcol};
+    my $col = $vdirs->{$vwd}{fnamcol};
+    my $st;
+    $st = $dbh->prepare("select $col, $comcol from $vwd order by $col");
+    unless( $st ) {
+      print $OUT "$PRG: can't prepare ll query '$vwd':\n  $DBI::errstr\n";
+      return 0;
+    }
+    unless( $st->execute() ) {
+      print $OUT "$PRG: can't exec ll query '$vwd':\n  $DBI::errstr\n";
+      return 0;
+    }
+    while( ($i,$c) = $st->fetchrow_array() ) {
+      $c = "" unless defined $c;
+      push @files, "$i";
+      push @com, "$c";
+    }
+    $st->finish();
+  }else{
+    my $st;
+    my $col = $vdirs->{$vwd}{fnamcol};
+    $st = $dbh->prepare("select $col from $vwd order by $col");
+    unless( $st ) {
+      print $OUT "$PRG: can't prepare ls query '$vwd':\n  $DBI::errstr\n";
+      return 0;
+    }
+    unless( $st->execute() ) {
+      print $OUT "$PRG: can't exec ls query '$vwd':\n  $DBI::errstr\n";
+      return 0;
+    }
+    while( $i = $st->fetchrow_array() ) {
+      push @files, "$i";
+      push @com, "";
+    }
+    $st->finish();
+  }
+
+  # show it
+  my $maxlen = 0;
+  foreach $i (@files) {
+    if( length($i) > $maxlen ) {$maxlen = length($i); }
+  }
+
+  for( $i=0; $i<=$#files; $i++ ) {
+    printf $OUT "%-${maxlen}s| %s\n", $files[$i], $com[$i];
+  }
+  return 0;
+}
+
+########################################################################
 # com_cd()
 #
 sub com_cd() {
@@ -304,14 +446,14 @@ sub com_quit() {
 # com_ver()
 #
 sub com_ver() {
-  print $OUT "   $PRG:  database editor\n";
-  print $OUT "      version $VERSION\n";
-  print $OUT "      (c) 2003   by Alexander Haderer\n";
+  print $OUT "   $PRG: config database editor\n";
+  print $OUT "   program version $VERSION\n";
   return 0;
 }
 
 ########################################################################
 # com_new()
+# no longer supported
 #
 sub com_new() {
   my $r;
@@ -353,7 +495,7 @@ sub com_rm() {
 	if( $#reffiles == -1 ) {
 	  my $rmerr;
 	  if( exists $vdirs->{$vwd}{rmcheck} ) {
-	    $rmerr = &{$vdirs->{$vwd}->{rmcheck}}($vwd,$arg);
+	    $rmerr = &{$vdirs->{$vwd}->{rmcheck}}( $vwd, $arg, $dbh);
 	  }
 	  if( defined $rmerr ) {
 	    print $OUT "rm: cannot remove: $rmerr\n";
@@ -391,26 +533,31 @@ sub com_cp() {
   if( defined $old and defined $new and !defined $x) {
     if( exists $vdirs->{$vwd} and $vdirs->{$vwd}{edit} ) {
       my $fnc = $vdirs->{$vwd}{fnamcol};
-      my $insert = "insert into $vwd (";
-      my $select = "select ";
-      my $cols   = $vdirs->{$vwd}{cols};
-      foreach my $col (sort keys(%{$cols}) ) {
-	$insert .= "$col,";
-	if( $col eq $fnc ) {
-	  $select .= "'$new',";
-	}elsif( exists $vdirs->{$vwd}{cols}{$col}{delcp} ) {
-	  $select .= "NULL,";
-	}else{
-	  $select .= "$col,";
+      if( (length($new)<=$vdirs->{$vwd}{cols}{$fnc}{len}) and !($new=~/\W+/)) {
+	my $fnc = $vdirs->{$vwd}{fnamcol};
+	my $insert = "insert into $vwd (";
+	my $select = "select ";
+	my $cols   = $vdirs->{$vwd}{cols};
+	foreach my $col (sort keys(%{$cols}) ) {
+	  $insert .= "$col,";
+	  if( $col eq $fnc ) {
+	    $select .= "'$new',";
+	  }elsif( exists $vdirs->{$vwd}{cols}{$col}{delcp} ) {
+	    $select .= "NULL,";
+	  }else{
+	    $select .= "$col,";
+	  }
 	}
-      }
-      chop $insert;
-      chop $select;
-      $insert .= ")";
-      $select .= " from $vwd where $fnc='$old'";
-      $r = $dbh->do( "$insert $select");
-      if( !defined $r or $r!=1 ) { 
-	print "cp: error: file '$old' doesn't exist or file '$new' exists\n"; 
+	chop $insert;
+	chop $select;
+	$insert .= ")";
+	$select .= " from $vwd where $fnc='$old'";
+	$r = $dbh->do( "$insert $select");
+	if( !defined $r or $r!=1 ) { 
+	  print "cp: error: no file '$old' or file '$new' exists\n"; 
+	}
+      }else{
+	print $OUT "cp: error: illegal or to long filename '$new'\n";
       }
     }else{
       print $OUT "cp: error: read only directory '/$vwd'\n";
@@ -758,6 +905,27 @@ sub check_vdirs_struct() {
 	return 1;
       }
     }
+    if( $vdirs->{$dir}{cols}{$fnamcol}{len} + 2 > $LS_COL_WIDTH ) {
+      my $maxlen = $LS_COL_WIDTH - 2;
+      print "$pre dir '$dir', fnamcol-column '$fnamcol' len > $maxlen\n";
+      return 1;
+    }
+
+    my $comcol = $vdirs->{$dir}{comcol};
+    if( defined $comcol) {
+      unless( defined $vdirs->{$dir}{cols}{$comcol} ) {
+	print "$pre dir '$dir', comcol set to '$comcol', but column missing\n";
+	return 1;
+      }
+      if( $vdirs->{$dir}{cols}{$comcol}{type} ne 'char' ) {
+	print "$pre dir '$dir', comcol-column '$comcol' type must be 'char'\n";
+	return 1;
+      }
+      unless( defined $vdirs->{$dir}{cols}{$comcol}{len} ) {
+	print "$pre dir '$dir', comcol-column '$comcol': missing 'len'\n";
+	return 1;
+      }
+    }
 
     my $cols = $vdirs->{$dir}{cols};
     foreach my $col (keys(%{$cols} )) {
@@ -1047,14 +1215,17 @@ sub print_file() {
       }
       print $FH "#\n";
       for( my $i=0; $i<= $#values; $i++ ) {
+	# variable with comment header
 	printf $FH "\n# %-50s(%s)\n", $vars[$i], $dbvars[$i];
-	print $FH "# $descs[$i]\n#\n";
+	foreach my $descline (split '\n', $descs[$i] ) {
+	  print $FH "# $descline\n";
+	}
+	print $FH "#\n";
 	if( @defaults ) {
 	  print $FH  "# default: ";
 	  print $FH  defined $defaults[$i] ? "$defaults[$i]\n#\n" : "$em\n#\n";
 	}
 	print $FH &var_value( $vars[$i], $values[$i], $isref[$i] );
-
       }
       print $FH "\n# end of file '$fnam'\n";
     }
@@ -1081,7 +1252,6 @@ sub var_value() {
     my $select = 
       "select $vdirs->{$ref}{fnamcol} from $ref order by $vdirs->{$ref}{fnamcol}";
     $s .= "#   This is a reference to a file in dir '$ref'.\n";
-    $s .= "#   Choose one or leave value empty\n";
     $st = $dbh->prepare( $select );
     unless( $st ) {
       $s .= "$PRG: can't prep var query '$ref':\n  $DBI::errstr\n";
@@ -1185,6 +1355,8 @@ sub create_sql_from_file( ) {
   my $sql2;
   my %varcol;			# translataion varname -> columnname
   my %isset;			# flags: variable already set? 1: yes
+  my %filevars;			# variables from file for phase 2
+  my %filevarslineno;		# lineno of variables from file for phase 2
 
   if( $insert_flag ) {
     $sql1 = "insert into $vdir ($vdirs->{$vdir}{fnamcol},";
@@ -1199,6 +1371,8 @@ sub create_sql_from_file( ) {
     $varcol{ $cols->{$col}{var} } = $col;
   }
 
+  # phase 1: do the basic checks, remember var values and their lineno for 
+  #	     phase 2 check (user supplied check functions)
   open( TF, $tmpfile ) or return ( 1,"can't open tempfile '$tmpfile'", undef );
   while( <TF> ) {
     $line = $_;
@@ -1270,21 +1444,14 @@ sub create_sql_from_file( ) {
 	    $err = "line $lineno: reference '$val' does no exist in '$rdir'";
 	    last;
 	  }
-
-	  my $valerr;
-	  if( exists $cols->{$col}{valok} ) {
-	    $valerr = &{$cols->{$col}{valok}}( $val );
-	    if( defined $valerr ) {
-	      $err = "line $lineno: $valerr";
-	      last;
-	    }
-	  }
 	  if( $insert_flag ) {
 	    $sql1 .= "$col,";
 	    $sql2 .= "'$val',";
 	  }else{
 	    $sql1 .= "$col='$val',";
 	  }
+	  $filevars{$col}       = $val;
+	  $filevarslineno{$col} = $lineno;
 
 	}elsif( $cols->{$col}{type} eq 'char' ) {
 	  # type char
@@ -1299,20 +1466,14 @@ sub create_sql_from_file( ) {
 	      last;
 	    }
 	  }
-	  my $valerr;
-	  if( exists $cols->{$col}{valok} ) {
-	    $valerr = &{$cols->{$col}{valok}}( $val );
-	    if( defined $valerr ) {
-	      $err = "line $lineno: $valerr";
-	      last;
-	    }
-	  }
 	  if( $insert_flag ) {
 	    $sql1 .= "$col,";
 	    $sql2 .= "'$val',";
 	  }else{
 	    $sql1 .= "$col='$val',";
 	  }
+	  $filevars{$col}       = $val;
+	  $filevarslineno{$col} = $lineno;
 
 	}elsif( $cols->{$col}{type} eq 'int' ) {
 	  # type int
@@ -1324,20 +1485,14 @@ sub create_sql_from_file( ) {
 	    $err = "line $lineno: value out of int range"; 
 	    last;
 	  }
-	  my $valerr;
-	  if( exists $cols->{$col}{valok} ) {
-	    $valerr = &{$cols->{$col}{valok}}( $val );
-	    if( defined $valerr ) {
-	      $err = "line $lineno: $valerr";
-	      last;
-	    }
-	  }
 	  if( $insert_flag ) {
 	    $sql1 .= "$col,";
 	    $sql2 .= "$val,";
 	  }else{
 	    $sql1 .= "$col=$val,";
 	  }
+	  $filevars{$col}       = $val;
+	  $filevarslineno{$col} = $lineno;
 
 	}elsif( $cols->{$col}{type} eq 'smallint' ) {
 	  # type smallint
@@ -1349,20 +1504,14 @@ sub create_sql_from_file( ) {
 	    $err = "line $lineno: value out of smallint range"; 
 	    last;
 	  }
-	  my $valerr;
-	  if( exists $cols->{$col}{valok} ) {
-	    $valerr = &{$cols->{$col}{valok}}( $val );
-	    if( defined $valerr ) {
-	      $err = "line $lineno: $valerr";
-	      last;
-	    }
-	  }
 	  if( $insert_flag ) {
 	    $sql1 .= "$col,";
 	    $sql2 .= "$val,";
 	  }else{
 	    $sql1 .= "$col=$val,";
 	  }
+	  $filevars{$col}       = $val;
+	  $filevarslineno{$col} = $lineno;
 
 	}else{
 	  # type unknown!
@@ -1370,20 +1519,14 @@ sub create_sql_from_file( ) {
 	  last;
 	}
       }else{
-	my $valerr;
-	if( exists $cols->{$col}{valok} ) {
-	  $valerr = &{$cols->{$col}{valok}}( undef );
-	  if( defined $valerr ) {
-	    $err = "line $lineno: $valerr";
-	    last;
-	  }
-	}
 	if( $insert_flag ) {
 	  $sql1 .= "$col,";
 	  $sql2 .= "NULL,";
 	}else{
 	  $sql1 .= "$col=NULL,";
 	}
+	$filevars{$col}       = undef;
+	$filevarslineno{$col} = $lineno;
       }
       $isset{$var} = 1;	# remember that this var is set
     }else{
@@ -1402,6 +1545,23 @@ sub create_sql_from_file( ) {
       # no columns to update
       $sql1 = "";
       $sql2 = "";
+    }
+  }
+
+  # phase 2: if basic check didn't show an error, do the user supplied checks
+
+  $filevars{ $vdirs->{$vdir}{fnamcol} } = $vfile;  # add our filename to hash
+  if( !defined $err ) {
+    foreach my $col (keys(%filevars) ) {
+      my $valerr;
+      if( exists $cols->{$col}{valok} ) {
+	$valerr = &{$cols->{$col}{valok}}( $filevars{$col}, \%filevars, $dbh );
+	if( defined $valerr ) {
+	  $err = "line $filevarslineno{$col}: $valerr";
+	  $lineno = $filevarslineno{$col};
+	  last;
+	}
+      }
     }
   }
   return ( $lineno, $err, "$sql1$sql2" );
@@ -1457,13 +1617,15 @@ DBIx::FileSystem - Manage tables like a filesystem
      },
   );
 
+  my %customcmds = ();
+
   if( $#ARGV==0 and $ARGV[0] eq 'recreatedb' ) {
     recreatedb(%vdirs, $PROGNAME, $VERSION, 
 	       $DBHOST, $DBUSER, $DBPWD);
   }else{
     # start the command line shell
     mainloop(%vdirs, $PROGNAME, $VERSION, 
-	     $DBHOST, $DBUSER, $DBPWD);
+	     $DBHOST, $DBUSER, $DBPWD, %customcmds );
   }
 
 This synopsis shows the program (aka 'the shell') to manage the 
@@ -1511,7 +1673,7 @@ The database itself will
 not be dropped. Checks if B<%vdirs> is valid. Returns nothing.
 
 
-mainloop(%vdirs,$PROGNAME,$VERSION,$DBHOST,$DBUSER,$DBPWD);
+mainloop(%vdirs,$PROGNAME,$VERSION,$DBHOST,$DBUSER,$DBPWD,%customcmds);
 
 Start the interactive shell for the directory structure given in B<%vdirs>. 
 Returns when the user quits the shell. Checks if B<%vdirs> is valid. 
@@ -1549,7 +1711,48 @@ DBI database user needed to connect to the database given in $DBHOST.
 DBI password needed by $DBUSER to connect to the database given in $DBHOST.
 May be set to undef if no password checking is done.
 
+=item %customcmds
+
+A hash which contains user defined commands to extend the shell 
+(custom commands).
+If you do not have any commands then set %customcmds = (); before calling
+mainloop(). The key of the hash is the commandname for the shell, the value 
+is an anon hash with two fields: B<func> holding a function reference of the
+function implementing the command and B<doc>, a one line help text for the
+help command. 
+
 =back
+
+=head2 custom commands
+
+All custom commands are integrated into the completion functions: command 
+completion and parameter completion, where parameter completion uses the
+files in the current directory.
+
+A custom command gets the shells command line parameters as 
+calling parameters. DBIx::FileSystem exports the following variables for use
+by custom commands:
+
+=over 4
+
+=item $DBIx::FileSystem::vwd
+
+The current working directory of the shell. Do not modify!
+
+=item $DBIx::FileSystem::dbh
+
+The handle to the open database connection for the config data. Do not modify!
+
+=item $DBIx::FileSystem::OUT
+
+A fileglob for stdout. Because FileSystem / Gnu ReadLine grabs the tty stdout
+you can not directly print to stdout, instead you have to use this fileglob.
+Do not modify!
+
+=back
+
+Please see 'count' command in the example 'pawactl' how to implement custom
+commands. See the source of DBIx::FileSystem how to implement commands.
 
 =head1 TRANSACTIONS
 
@@ -1607,13 +1810,20 @@ The DIRECTORY_SETTING defines the layout of a directory (database table):
 
     # mandatory: Defines if this directory is read-
     # only or writable for the shell. If set to 1
-    # then the commands new/vi/rm are allowed.
+    # then the commands vi/rm are allowed.
     edit => [0|1],		
 
     # mandatory: The column which acts as filename.
     # The column must be of type 'char' and len 
-    # must be set.
+    # must be set and len should be < 15 for proper
+    # 'ls' output
     fnamcol => 'colname',	
+
+    # optional: The column which acts as comment
+    # field. The column must be of type 'char' and 
+    # len must be set. The comments will be shown
+    # by 'll' command (list long).
+    comcol => 'colname',	
 
     # optional: Name of a default file. This file
     # will be automatically created from 
@@ -1625,8 +1835,9 @@ The DIRECTORY_SETTING defines the layout of a directory (database table):
     # that will be called when a file of this 
     # directory will be removed. The rm command
     # will call this function with parameters 
-    # ($dir, $file) of the file to be removed 
+    # ($dir, $file, $dbh) of the file to be removed 
     # and after all other builtin checks are done.
+    # $dbh is the handle to the database connection.
     # The function has to return undef if remove 
     # is ok, or a one line error message if it is 
     # not ok  to remove the file
@@ -1658,8 +1869,14 @@ The COLUMN_SETTING defines the layout of a column (database column).
     # that will be called before a value gets
     # inserted/updated for this column and after
     # builtin type, length, range and reference
-    # checks has been done. Gets the new
-    # value as a parameter. Returns undef
+    # checks has been done. Will be called with
+    # ($value_to_check,$hashref_to_othervalues,$dbh)
+    # hashref holds all values read in from file,
+    # key is the columnname. All hashvalues are 
+    # already checked against their basic type, 
+    # empty values in the file will be set to undef.
+    # $dbh is the handle to the database connection.
+    # The valok function has to return undef
     # if the value is ok or a one line error
     # message if the value is not ok.
     valok => \&myValCheck,			
@@ -1845,11 +2062,20 @@ Usage: 'help [command]'. Show a brief command description.
 Usage: 'ls'. Show the contents of the current directory. The B<%vdirs>
 hash defines, which columns are used as a filename.
 
-=item new
+=item ld
 
-Usage: 'new FILE'. Create a new FILE in the current directory. All
-variables are set to NULL. Requires write access to the directory.
-new will fail if a column has a 'NOT NULL' constraint. Use 'vi' instead.
+Usage: 'ld'. Show the contents (dirs and files) of the current directory 
+in long format. The B<%vdirs> hash defines, which columns are used as a 
+filename. For directories 'ld' will display the directory B<desc> field 
+from B<%vdirs>. For files see command 'll' below.
+
+=item ll
+
+Usage: 'll'. Show the contents (files only) of the current directory, 
+in long format. The B<%vdirs> hash defines, which columns are used as a 
+filename. If B<comcol> (comment column) is set in B<%vdirs>, then 
+additionally show the contents of this column for each file. 
+
 
 =item quit
 

@@ -5,9 +5,9 @@
 # pawactl   : packet warehouse control program
 #
 # Last Update:		$Author: marvin $
-# Update Date:		$Date: 2003/04/09 11:07:10 $
+# Update Date:		$Date: 2003/07/17 17:32:24 $
 # Source File:		$Source: /home/cvsroot/tools/FileSystem/pawactl,v $
-# CVS/RCS Revision:	$Revision: 1.1.1.1 $
+# CVS/RCS Revision:	$Revision: 1.5 $
 # Status:		$State: Exp $
 # 
 # Imagine a warehouse for packet distribution: Some well known senders are
@@ -33,29 +33,37 @@
 # dummy entries in the warehouse and some config entries to play around with.
 #
 # Things to look at:
+#  - There is a custom command 'count' defined in com_count()
+#  - The count command and its parameter(s) are included in file completion
+#  - All variables have type and length check when saving the file with vi
+#  - All basic checks are done before custom check functions are called
+# 
 #  - directory 'dest':
+#     - all files have comment field wich 'll' will show
 #     - mars moon and neptun cannot be removed because they are referenced
 #     - sun cannot be removed because it is protected by &myrmcheck function
-#     - All variables have type and length check when saving the file with vi
-#     - The 'Delay' variable additionally has a custom range check function
+#     - The 'Address' variable's description consists of three lines
+#     - The 'Delay1' variable additionally has a custom range check function
+#         that does additionaly check a dependency with Delay2
+#     - The 'Delay2' variable additionally has a custom range check function
 #     - The 'MaxPacketSize' variable must not be NULL because of the 
-#       database constraint 'NOT NULL'. Note the errormessage when saving a
-#       file with MaxPacketSize = empty comes from the database.
+#         database constraint 'NOT NULL'. Note the errormessage when saving a
+#         file with MaxPacketSize = empty comes from the database.
 #  - directory 'source':
 #     - commands sum,cat,vi take care of the default file 'generic'
 #     - file generic can not be removed because it is the defaultfile
 #     - variable 'SourceID' will be set to NULL when copying a file (delcp)
 #     - variable 'Distance' must be set because of a custom value check 
-#       function &mydefcheck. Note the errormessage is much more descriptive
-#       (incl. line number) when saving a file where Distance is not set.
-#       Compare this with 'MaxPacketSize' in directory 'dest'
+#         function &mydefcheck. Note the errormessage is much more descriptive
+#         (incl. line number) when saving a file where Distance is not set.
+#         Compare this with 'MaxPacketSize' in directory 'dest'
 #     - variable 'Destination' is a reference to directory dest. Only one 
-#       valid filename or an empty value can be entered here.
+#         valid filename or an empty value can be entered here.
 #  - directory 'warehouse':
 #     - this directory is write protected
 #     - you can still look into files with sum and cat
 #     - variable 'StatusFlag' is of type bool, (not supported when edit=1)
-#     - variable 'LastChecked' is of type datetime, (not supported when edit=1)
+#     - variable 'LastChecked' is of type timestamp,(not supported when edit=1)
 #
 # NOTE: Edit the DB params below
 # NOTE: to start pawactl without installation of DBIx::Filesystem do:
@@ -68,6 +76,19 @@
 #
 # CVS/RCS Log:
 # $Log: pawactl,v $
+# Revision 1.5  2003/07/17 17:32:24  marvin
+# pawactl custom command example hello --> count
+#
+# Revision 1.4  2003/07/16 18:32:33  marvin
+# Added custom commands
+# valok and rmcheck now get $dbh param
+#
+# Revision 1.3  2003/07/11 17:59:17  marvin
+# valok now gets additional parameter: a hashref of all values read from file
+#
+# Revision 1.2  2003/07/11 15:40:57  marvin
+# multiline descriptions, cp now checks filename
+#
 # Revision 1.1.1.1  2003/04/09 11:07:10  marvin
 # Imported Sources
 #
@@ -80,7 +101,7 @@ use DBIx::FileSystem qw( mainloop recreatedb );
 my $VERSION = "0001";	# our version string
 
 # DBI connect string    EDIT THIS! The database must exist!
-my $DBHOST = "dbi:Pg:dbname=warehouse;host=tpau";
+my $DBHOST = "dbi:Pg:dbname=warehouse;host=vinmari";
 
 # DBI user
 my $DBUSER = "marvin";
@@ -105,11 +126,11 @@ my %vdirs =
    source   => 			# dirname (=tablename)
    { desc => "source config",	# description
      edit => 1,			# new/vi/rm allowed ? (no/yes = 0/1)
-     fnamcol => 'srcname',	# column which acts as filename, must be of
+     fnamcol => 'fname',	# column which acts as filename, must be of
       				# type 'char' plus for edit=1 len must be set
      defaultfile => 'generic',	# name of a default file (optional)
      cols => 				# columns
-     { srcname => 				# columnname in DB
+     { fname => 				# columnname in DB
        { type	=> 'char',			# mandatory: DB type
 	 len	=> 10,				# mandatory (edit = 1 !)
 	 colopt=> 'PRIMARY KEY',		# optional, but useful here
@@ -144,32 +165,49 @@ my %vdirs =
    # configuration data for the warehouse process
    # A destination defines where the packets from the warehouse will be send to
    dest   => 			# dirname (=tablename)
-   { desc => "destination def",	# description
+   { desc => "destination defs",# description
      edit => 1,			# new/vi/rm allowed ? (no/yes = 0/1)
-     fnamcol => 'dname',	# column which acts as filename, must be of
+     fnamcol => 'fname',	# column which acts as filename, must be of
       				# type 'char' plus for edit=1 len must be set
+     comcol => 'comment',	# a column for comments
      rmcheck => \&myrmcheck,	# a custom check function for 'rm' command
      cols => 				# columns
-     { dname => 				# columnname in DB
+     { fname => 				# columnname in DB
        { type	=> 'char',			# mandatory: DB type
-	 len	=> 15,				# mandatory (edit = 1 !)
+	 len	=> 14,				# mandatory (edit = 1 !)
 	 colopt=> 'PRIMARY KEY',		# optional, but useful here
 	 var 	=> 'Destination',		# mandatory, variable name
 	 desc	=> "The name of the destination",# mandatory, description
 	 pos	=> $pos++,			# mandatory, auto incr position
        },
+       comment => 					# columnname in DB
+       { type	=> 'char',
+	 len	=> 65,			
+	 var	=> 'Comment',
+	 desc	=> "",
+	 pos	=> $pos++,			
+       },
        addr => 					# columnname in DB
        { type	=> 'char',
 	 len	=> 20,			
 	 var	=> 'Address',
-	 desc	=> "The Address of the destination",
+	 desc	=> "The Address of the destination\n".
+	 	   "NOTE: This description consists of three lines\n".
+	 	   "      here is line three",
 	 pos	=> $pos++,			
        },
-       delay => 				# columnname in DB
+       delay1 => 				# columnname in DB
        { type	=> 'smallint',
-	 var	=> 'Delay',
+	 var	=> 'Delay1',
+	 valok	=> \&mydelaycheck,		# custom value check function
+	 desc	=> "The first delay when sending packets (1..100)",
+	 pos	=> $pos++,			
+       },
+       delay2 => 				# columnname in DB
+       { type	=> 'smallint',
+	 var	=> 'Delay2',
 	 valok	=> \&myrangecheck,		# custom value check function
-	 desc	=> "The delay when sending packets (1..100)",
+	 desc	=> "The second delay when sending packets (1..100)",
 	 pos	=> $pos++,			
        },
        mps => 					# columnname in DB
@@ -187,10 +225,10 @@ my %vdirs =
    warehouse   => 		# dirname (=tablename)
    { desc => "warehouse store",	# description
      edit => 0,			# new/vi/rm allowed ? (no/yes = 0/1)
-     fnamcol => 'pid',		# column which acts as filename, must be of
+     fnamcol => 'fname',	# column which acts as filename, must be of
       				# type 'char' plus for edit=1 len must be set
      cols => 				# columns
-     { pid => 					# columnname in DB
+     { fname => 				# columnname in DB
        { type	=> 'char',			# mandatory: DB type char
 	 len	=> 6,				# optional  here
 	 var 	=> 'PacketID',			# mandatory, variable name
@@ -216,7 +254,7 @@ my %vdirs =
 	 pos	=> $pos++,			
        },
        lcheck => 				# columnname in DB
-       { type	=> 'datetime',			# datetime ok because edit => 0
+       { type	=> 'timestamp',			# timestamp ok: edit => 0
 	 var	=> 'LastChecked',
 	 desc	=> "Sytem this packet was last checked",
 	 pos	=> $pos++,			
@@ -234,6 +272,16 @@ my %vdirs =
   );
 
 ########################################################################
+# c u s t o m    c o m m a n d s
+########################################################################
+
+my %cmds =
+  ('count'=> 	{ func => \&com_count,
+		  doc => "count files in current dir: 'count'" },
+  );
+
+
+########################################################################
 # the 'program'
 ########################################################################
 
@@ -242,7 +290,44 @@ if( $#ARGV==0 and $ARGV[0] eq 'recreatedb' ) {
   recreatedb( %vdirs, $PROGNAME, $VERSION, $DBHOST, $DBUSER, $DBPWD );
   fill_with_dummies();
 }else{
-  mainloop( %vdirs, $PROGNAME, $VERSION, $DBHOST, $DBUSER, $DBPWD );
+  mainloop( %vdirs, $PROGNAME, $VERSION, $DBHOST, $DBUSER, $DBPWD, %cmds );
+}
+
+###############################################################
+# com_count()
+# a custom command integrated into FileSystem. Parameters are the words
+# the user entered on command line. If it returns anything other than 0 the
+# shell will terminate.
+# To write to stdout we must use the $OUT handle managed by DBIx::FileSystem
+###############################################################
+sub com_count {
+  my $OUT = $DBIx::FileSystem::OUT;
+  my $vwd = $DBIx::FileSystem::vwd;
+  my $dbh = $DBIx::FileSystem::dbh;
+
+  my $x = shift;
+  my $numf;
+
+  if( defined $x ) {
+    print $OUT "count: usage: $cmds{count}->{doc}\n";
+    return 0;
+  }
+
+  # count files
+  my $st = $dbh->prepare("select count(*) from $vwd" );
+  unless( $st ) {
+    print $OUT "$PROGNAME: prepare count query '$vwd':\n  $DBI::errstr\n";
+    return 0;
+  }
+  unless( $st->execute() ) {
+    print $OUT "$PROGNAME: exec count query '$vwd':\n  $DBI::errstr\n";
+    return 0;
+  }
+  ($numf) = $st->fetchrow_array();
+  $st->finish();
+  print $OUT "There are $numf files in dir $vwd\n";
+
+  return 0;
 }
 
 ###############################################################
@@ -263,7 +348,41 @@ sub myrmcheck {
 }
 
 ###############################################################
-# sample rangecheck: a function to check if a value is in range 1..100
+# sample delaycheck: a function to check if Delay1 is in range 1..100
+# and is smaller than Delay2
+# 
+# If $val is defined it was already checked against length, reference 
+# and datatype given by column specs.
+#
+# in:   $val:	the value to be checked
+#       $vref:	a hash with all values from this file, key is the columnname
+# return:
+#	- A one line error message if the value is invalid
+#	- undef if the value is ok
+###############################################################
+sub mydelaycheck {
+  my ($val,$vref) = @_;
+  if( defined $val ) {
+    # if the value is defined it must be in range 1..100
+    if( $val < 1 or $val > 100 ) {
+      return "invalid value: valid range: (1..100)";
+    }else{
+      # check dependency with Delay2
+      if( defined $vref->{delay2} ) {
+	if( $val >= $vref->{delay2} ) {
+	  return "invalid value: Delay1 must be smaller than Delay2";
+	}
+      }else{
+	return "Delay2 must be set";
+      }
+    }
+  }
+  return undef;
+}
+
+###############################################################
+# sample rangecheck: a function to check if value is in range 1..100
+# 
 # If $val is defined it was already checked against length, reference 
 # and datatype given by column specs.
 #
@@ -308,9 +427,9 @@ use DBI;
 sub fill_with_dummies {
   my $dbh;
   my $r;
-  my $inssource = "insert into source (srcname,srcid,dist,sendto) values";
-  my $insdest = "insert into dest (dname,addr,delay,mps) values";
-  my $inswh = "insert into warehouse (pid,itim,dummy,flag,lcheck,dest) values";
+  my $inssource = "insert into source (fname,srcid,dist,sendto) values";
+  my $insdest = "insert into dest (fname,comment,addr,delay1,delay2,mps) values";
+  my $inswh = "insert into warehouse (fname,itim,dummy,flag,lcheck,dest) values";
 
   ($dbh = DBI->connect( $DBHOST, $DBUSER, $DBPWD,
      {ChopBlanks => 1, AutoCommit => 1, PrintError => 0})) 
@@ -326,11 +445,11 @@ sub fill_with_dummies {
   $dbh->do( "$inssource ('kcity','CIK',4455,'moon')" );
   $dbh->do( "$inssource ('fromfar',NULL,1000000,'mars'" );
 
-  $dbh->do( "$insdest ('moon','nearby',77,55)" );
-  $dbh->do( "$insdest ('venus','direction sun',12,67)" );
-  $dbh->do( "$insdest ('mars','direction galaxy',8,999)" );
-  $dbh->do( "$insdest ('neptun','nearby sun',3,2121)" );
-  $dbh->do( "$insdest ('sun','the center',7,1)" );
+  $dbh->do( "$insdest ('moon','not a planet','nearby',77,80,88)" );
+  $dbh->do( "$insdest ('venus','a female planet','direction sun',12,33,67)" );
+  $dbh->do( "$insdest ('mars','the red one','direction galaxy',8,16,999)" );
+  $dbh->do( "$insdest ('neptun','only a small dest','nearby sun',3,76,2121)" );
+  $dbh->do( "$insdest ('sun','bright and big','the center',7,55,9)" );
 
   $dbh->do( "$inswh ('kr3345',123456700,42,true,'2003-03-04','moon')" );
   $dbh->do( "$inswh ('kr7000',123456702,42,true,'2003-03-03','moon')" );
