@@ -22,13 +22,21 @@
 # Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 # Last Update:		$Author: marvin $
-# Update Date:		$Date: 2003/09/22 14:56:55 $
+# Update Date:		$Date: 2004/05/28 14:32:43 $
 # Source File:		$Source: /home/cvsroot/tools/FileSystem/FileSystem.pm,v $
-# CVS/RCS Revision:	$Revision: 1.11 $
+# CVS/RCS Revision:	$Revision: 1.13 $
 # Status:		$State: Exp $
 # 
 # CVS/RCS Log:
 # $Log: FileSystem.pm,v $
+# Revision 1.13  2004/05/28 14:32:43  marvin
+# - rename delcp --> uniq
+# - new command: vgrep
+# - command 'new' removed
+#
+# Revision 1.12  2004/01/29 19:16:45  marvin
+# - delcp option now also checks for uniqueness
+#
 # Revision 1.11  2003/09/22 14:56:55  marvin
 # fixed deprecated use of refs
 #
@@ -71,7 +79,7 @@ use strict;
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
 use Exporter;
 
-$DBIx::FileSystem::VERSION = '1.08';
+$DBIx::FileSystem::VERSION = '1.09';
 
 @ISA = qw( Exporter );
 @EXPORT_OK = qw(
@@ -115,6 +123,8 @@ my %commands =
 		  doc => "edit/create a file: 'vi FILE'" },
    'ver' => 	{ func => \&com_ver,
 		  doc => "show version" },
+   'vgrep' => 	{ func => \&com_vgrep,
+		  doc => "grep var/value pairs in all files: vgrep PATTERN" },
    'wrefs' => 	{ func => \&com_wref,
 		  doc => "show who references a file: 'wrefs FILE'" },
   );
@@ -455,37 +465,8 @@ sub com_quit() {
 # com_ver()
 #
 sub com_ver() {
-  print $OUT "   $PRG: config database editor\n";
-  print $OUT "   program version $VERSION\n";
-  return 0;
-}
-
-########################################################################
-# com_new()
-# no longer supported
-#
-sub com_new() {
-  my $r;
-  my $arg = shift;
-  if( defined $arg ) {
-    if( exists $vdirs->{$vwd} and $vdirs->{$vwd}->{edit} ) {
-      my $fnc = $vdirs->{$vwd}{fnamcol};
-      if( (length($arg)<=$vdirs->{$vwd}{cols}{$fnc}{len}) and !($arg=~/\W+/)) {
-	$r = $dbh->do( "insert into $vwd ($fnc) values ('$arg')");
-	if( !defined $r ) {
-	  print $OUT "new: couldn't create: database error:\n$DBI::errstr\n";
-	}elsif( $r==0 ) {
-	  print $OUT "new: couldn't create\n";
-	}
-      }else{
-	print $OUT "new: error: illegal or to long filename '$arg'\n";
-      }
-    }else{
-      print $OUT "new: error: read only directory '/$vwd'\n";
-    }
-  }else{
-    print $OUT "new: usage: $commands{new}->{doc}\n";
-  }
+  print $OUT "   DBIx-FileSystem Version: $DBIx::FileSystem::VERSION\n";
+  print $OUT "   $PRG \%vdirs version: $VERSION\n";
   return 0;
 }
 
@@ -496,7 +477,7 @@ sub com_rm() {
   my $r;
   my ($arg,$x) = @_;
   if( defined $arg and !defined $x ) {
-    if( exists $vdirs->{$vwd} and $vdirs->{$vwd}{edit} ) {
+    if( $vdirs->{$vwd}{edit} ) {
       if( $vdirs->{$vwd}{defaultfile} and $vdirs->{$vwd}{defaultfile} eq $arg ) {
 	print $OUT "rm: error: cannot remove default file '$arg'\n";
       }else{
@@ -540,7 +521,7 @@ sub com_cp() {
   my $r;
   my ($old,$new,$x) = @_;
   if( defined $old and defined $new and !defined $x) {
-    if( exists $vdirs->{$vwd} and $vdirs->{$vwd}{edit} ) {
+    if( $vdirs->{$vwd}{edit} ) {
       my $fnc = $vdirs->{$vwd}{fnamcol};
       if( (length($new)<=$vdirs->{$vwd}{cols}{$fnc}{len}) and !($new=~/\W+/)) {
 	my $fnc = $vdirs->{$vwd}{fnamcol};
@@ -551,7 +532,7 @@ sub com_cp() {
 	  $insert .= "$col,";
 	  if( $col eq $fnc ) {
 	    $select .= "'$new',";
-	  }elsif( exists $vdirs->{$vwd}{cols}{$col}{delcp} ) {
+	  }elsif( exists $vdirs->{$vwd}{cols}{$col}{uniq} ) {
 	    $select .= "NULL,";
 	  }else{
 	    $select .= "$col,";
@@ -583,13 +564,8 @@ sub com_cp() {
 #
 sub com_sum() {
   my ($arg,$x) = @_;
-
   if( defined $arg and !defined $x ) {
-    if( exists $vdirs->{$vwd} ) {
-      if( print_file( $OUT, $arg, 0 ) == 1 ) {
-	print $OUT "sum: no such file '$arg'\n";
-      }
-    }else{
+    if( print_file( $OUT, $arg, 0 ) == 1 ) {
       print $OUT "sum: no such file '$arg'\n";
     }
   }else{
@@ -605,11 +581,7 @@ sub com_cat() {
   my ($arg,$x) = @_;
 
   if( defined $arg and !defined $x ) {
-    if( exists $vdirs->{$vwd} ) {
-      if( print_file( $OUT, $arg, 1 ) == 1 ) {
-	print $OUT "cat: no such file '$arg'\n";
-      }
-    }else{
+    if( print_file( $OUT, $arg, 1 ) == 1 ) {
       print $OUT "cat: no such file '$arg'\n";
     }
   }else{
@@ -632,7 +604,7 @@ sub com_vi() {
   my $ln = 1;		# line number where editor starts
 
   if( defined $arg and !defined $x ) {
-    if( exists $vdirs->{$vwd} and $vdirs->{$vwd}{edit} ) {
+    if( $vdirs->{$vwd}{edit} ) {
       my $fnc = $vdirs->{$vwd}{fnamcol};
       if( (length($arg)<=$vdirs->{$vwd}{cols}{$fnc}{len}) and !($arg=~/\W+/)) {
 	while( 1 ) { $tmpf = tmpnam();
@@ -683,22 +655,30 @@ sub com_vi() {
 # com_wref()
 #
 sub com_wref() {
-  my $r;
   my ($arg,$x) = @_;
   if( defined $arg and !defined $x ) {
-    if( exists $vdirs->{$vwd} ) {
-      my @reffiles = get_who_refs_me( $vwd, $arg );
-      if( $#reffiles > -1 ) {
-	print $OUT join( "\n", @reffiles );
-	print $OUT "\n";
-      }else{
-	print $OUT "wrefs: no one references '$arg'\n";
-      }
+    my @reffiles = get_who_refs_me( $vwd, $arg );
+    if( $#reffiles > -1 ) {
+      print $OUT join( "\n", @reffiles );
+      print $OUT "\n";
     }else{
-      print $OUT "wrefs: no such file '$arg'\n";
+      print $OUT "wrefs: no one references '$arg'\n";
     }
   }else{
     print $OUT "wrefs: usage: $commands{wrefs}{doc}\n";
+  }
+  return 0;
+}
+
+########################################################################
+# com_vgrep()
+#
+sub com_vgrep() {
+  my ($arg,$x) = @_;
+  if( defined $arg and !defined $x ) {
+    do_vgrep( $arg );
+  }else{
+    print $OUT "vgrep: usage: $commands{vgrep}{doc}\n";
   }
   return 0;
 }
@@ -939,6 +919,12 @@ sub check_vdirs_struct() {
     my %varnames = ();	# duplicate check: key=varname  value=column name
     my $cols = $vdirs->{$dir}{cols};
     foreach my $col (keys(%{$cols} )) {
+      # check for deprecated 'delcp' option
+      if( exists $cols->{$col}{delcp} ) {
+	$cols->{$col}{uniq} = 1;
+	print "\nWARNING: $PRG: internal vdirs struct:\n   dir '$dir', column '$col', option 'delcp' deprecated, use 'uniq'\n\n";
+      }
+
       # check for 'type' / 'ref'
       unless( defined $cols->{$col}{type} || defined $cols->{$col}{ref} ) {
 	print "$pre dir '$dir', column '$col', either 'type' or 'ref' must be set\n";
@@ -1169,7 +1155,7 @@ sub print_file() {
 
   if( $vdirs->{$vwd}{defaultfile} and $vdirs->{$vwd}{defaultfile} ne $fnam ) {
     unless( $st->execute( $vdirs->{$vwd}{defaultfile} ) ) {
-      print $FH "$PRG: can't exec sum query 2 '$vwd':\n  $DBI::errstr\n";
+      print $FH "$PRG: can't exec print query 2 '$vwd':\n  $DBI::errstr\n";
       return 2;
     }
     @defaults = $st->fetchrow_array();
@@ -1570,14 +1556,51 @@ sub create_sql_from_file( ) {
 
   # phase 2: if basic check didn't show an error, do the user supplied checks
 
+  my $hasuniqcols = 0;
   $filevars{ $vdirs->{$vdir}{fnamcol} } = $vfile;  # add our filename to hash
   if( !defined $err ) {
     foreach my $col (keys(%filevars) ) {
       my $valerr;
+      if( exists $cols->{$col}{uniq} ) { $hasuniqcols = 1; }
       if( exists $cols->{$col}{valok} ) {
 	$valerr = &{$cols->{$col}{valok}}( $filevars{$col}, \%filevars, $dbh );
 	if( defined $valerr ) {
 	  $err = "line $filevarslineno{$col}: $valerr";
+	  $lineno = $filevarslineno{$col};
+	  last;
+	}
+      }
+    }
+  }
+
+  # phase 3: check if there are columns/vars that have to be uniq
+
+  my $fnc = $vdirs->{$vwd}{fnamcol};
+  if( !defined $err and $hasuniqcols == 1 ) {
+    foreach my $col (keys(%filevars) ) {
+      my $valerr = "";
+      if( exists $cols->{$col}{uniq} ) {
+	my $st;
+	my $dbval;
+	$st = $dbh->prepare(
+		"select $fnc from $vwd where $col=? and $fnc != '$vfile'");
+	unless( $st ) {
+	  $err = "$PRG: internal error: prepare 'uniq' query '$vwd':\n";
+	  $err .= "  $DBI::errstr\n";
+	  last;
+	}
+	unless( $st->execute( $filevars{$col} ) ) {
+	  $err = "$PRG: internal error: exec 'uniq' query '$vwd':\n";
+	  $err .= "  $DBI::errstr\n";
+	  last;
+	}
+	while( ($dbval) = $st->fetchrow_array() ) {
+	  $valerr .= " $dbval";
+	}
+	$st->finish();
+	if( $valerr ne "" ) {
+	  $err = "line $filevarslineno{$col}: uniq value '$filevars{$col}' " .
+		 "already in file(s): $valerr";
 	  $lineno = $filevarslineno{$col};
 	  last;
 	}
@@ -1606,6 +1629,99 @@ sub want_to_edit_again() {
     chop $inp;
   }
   return $inp;
+}
+
+########################################################################
+# do_vgrep( pattern );
+# grep all val/value pairs in vwd for pattern and print matching lines
+#   pattern:	the pattern to grep for
+#
+# return:
+# 	nothing
+#
+sub do_vgrep() {
+  my $pattern = quotemeta shift;
+
+  my @vars;
+  my @dbvars;
+  my $var;
+  my @values;
+  my @defaults;
+  my $fnam;
+  my $em = "*unset*";
+
+  # prepare db query
+  my $fnc = $vdirs->{$vwd}{fnamcol};
+  my $select = "select $fnc,";
+  my $seldef = "select ";
+  my $cols = $vdirs->{$vwd}{cols};
+  my $fnlen = $cols->{$fnc}{len};
+  foreach my $col (sort {$cols->{$a}{pos} <=> $cols->{$b}{pos}} 
+		   keys(%{$cols}) ) 
+    {
+      next if $col eq $fnc;
+      $var = $cols->{$col}{var};
+      push @vars,  $var;
+      push @dbvars,$col;
+      $select .=  "$col,";
+      $seldef .=  "$col,";
+    }
+  chop $select;
+  chop $seldef;
+  $select .= " from $vwd order by $fnc";
+  $seldef .= " from $vwd where $fnc=?";
+  
+  # query default if available
+  if( $vdirs->{$vwd}{defaultfile} ) {
+    my $st;
+    $st = $dbh->prepare( $seldef );
+    unless( $st ) {
+      print $OUT "$PRG: prep vgrep default query '$vwd':\n  $DBI::errstr\n";
+      return;
+    }
+    unless( $st->execute( $vdirs->{$vwd}{defaultfile} ) ) {
+      print $OUT "$PRG: exec vgrep default query '$vwd':\n  $DBI::errstr\n";
+      return;
+    }
+    @defaults = $st->fetchrow_array();
+    $st->finish();
+  }
+  
+  # query all files
+  my $st;
+  $st = $dbh->prepare( $select );
+  unless( $st ) {
+    print $OUT "$PRG: prep vgrep query '$vwd':\n  $DBI::errstr\n";
+    return;
+  }
+  unless( $st->execute() ) {
+    print $OUT "$PRG: exec vgrep query 1 '$vwd' :\n  $DBI::errstr\n";
+    return;
+  }
+
+  # print result
+  while (($fnam, @values ) = $st->fetchrow_array() ) {
+    if( @values ) {
+      for( my $i=0; $i<= $#values; $i++ ) {
+	my $line = $vars[$i];
+	my $eq = " = ";
+	if( @defaults ) {
+	  if( defined $values[$i] ) {
+	    $line .= "$eq$values[$i]\n";
+	  }else{
+	    $eq = " -> " if $fnam ne $vdirs->{$vwd}{defaultfile};
+	    $line .= defined $defaults[$i] ? "$eq$defaults[$i]\n" :"$eq$em\n";
+	  }
+	}else{
+	  $line .= defined $values[$i] ? "$eq$values[$i]\n" : "$eq$em\n";
+	}
+	printf $OUT "%${fnlen}s: %s", $fnam, $line if $line =~ /$pattern/i;
+      }
+    }
+  }
+  $st->finish();
+  
+  return;
 }
 
 ########################################################################
@@ -1809,6 +1925,11 @@ FileSystem knows about a defaultfile when viewing a file and shows the
 values from the defaultfile when a variable contains NULL. A defaultfile
 can not be removed with 'rm'.
 
+cat, sum, and vgrep show the usage of the default value by showing '->'
+instead of '=' when printing content. Example: "MyVar -> 1234". 
+Here the value of MyVar is NULL in the database and the default value 
+(1234) from the defaultfile is printed.
+
 
 =head2 B<%vdirs hash>
 
@@ -1902,9 +2023,12 @@ The COLUMN_SETTING defines the layout of a column (database column).
     valok => \&myValCheck,			
 
     # optional: When this option exists and is set
-    # to 1 then this column will be set to NULL 
-    # when copying af file with 'cp'.
-    delcp => 1,			
+    # then this column will be set to NULL 
+    # when copying a file with 'cp'. When saving a
+    # file the value entered must be uniq for this
+    # variable in all files in the dir.
+    # (formerly known as 'delcp' option)
+    uniq => 1,			
 
     # mandatory: Descriptive long variable name 
     # for this column. Will be used as an alias
@@ -1967,9 +2091,9 @@ The user can set database constraints for scpecific columns with the
 B<colopt> option in B<%vdirs>. FileSystem takes care of these constraints
 and reports any errors regarding the use of these constraints to the 
 user. Because the errormessages (from the DBI/DBD subsystem) are sometimes
-not what the user expects it is a good idea to use the custom 
-B<rmcheck> and B<valok> functions within B<%vdirs> together with database 
-constraints. This has more advantages:
+not what the user expects it is a good idea to use column option 'uniq', 
+and/or the custom B<rmcheck> and B<valok> functions within B<%vdirs> together 
+with database constraints. This has more advantages:
 
 =over 4
 
@@ -1981,16 +2105,16 @@ can not destroy the integrity of the database.
 
 =item 2.
 
-FileSystem, B<rmcheck> and B<valok> custom functions report 'understandable' 
-error messages to the user, they also report the errornous line number to the
-editor after editing and saving an odd file. Database errors have no line 
-numbers.
+FileSystem uniq-option, B<rmcheck> and B<valok> custom functions report 
+'understandable' error messages to the user, they also report the 
+errornous line number to the editor after editing and saving an odd file. 
+Database errors have no line numbers.
 
 =item 3.
 
-FileSystem functions, B<rmcheck> and B<valok> custom functions will be
-called just before a database operation. If they fail, the database operation
-will not take place.
+FileSystem functions uniq test, and custom functions B<rmcheck> and B<valok> 
+will be called just before a database operation. If they fail, 
+the database operation will not take place.
 
 =item 4.
 
@@ -2073,7 +2197,7 @@ does not analyze the system catalog of the underlying database.
 =item cp
 
 Usage: 'cp OLD NEW'. Copy file OLD to file NEW (clone a file). When
-copying, the variables marked as 'delcp' will be set to NULL in file
+copying, the variables marked as 'uniq' will be set to NULL in file
 NEW. Requires write access to the directory.
 
 =item help
@@ -2123,6 +2247,14 @@ defaultfile instead of '=' and the value of the variable.
 =item ver
 
 Usage: 'ver'. Show version information.
+
+
+=item vgrep
+
+Usage: 'vgrep PATTERN'. Find a pattern in all files. Find all lines in 
+all files in current dir where var/value pair matches PATTERN. Print 
+out matching lines. Ignore case when doing pattern matching. 
+Regex patterns will be ignored, all metacharacters will be quoted.
 
 
 =item vi

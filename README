@@ -40,6 +40,7 @@ The file pawactl shows the usage of DBIx::FileSystem. It implements
 the configure shell of a virtual package warehouse. Sample session:
 
 ----------> pawactl sample session start --------->
+
   pawactl (/source): ls
   (dest)          acity           factory2        lcity           
   (source)        bcity           generic         
@@ -68,6 +69,14 @@ the configure shell of a virtual package warehouse. Sample session:
   SourceID     = CIB
   Distance     = 2434
   Destination  = moon
+  pawactl (/source): vgrep destina
+       acity: Destination = mars
+       bcity: Destination = moon
+    factory1: Destination = moon
+    factory2: Destination = venus
+     fromfar: Destination = mars
+     generic: Destination = *unset*
+       kcity: Destination = moon
   pawactl (/source): cd dest 
   pawactl (/dest): ls
   (dest)          (warehouse)     moon            venus           
@@ -82,8 +91,7 @@ the configure shell of a virtual package warehouse. Sample session:
      ... save & quit ...
 
 
-
-  ERROR: line 19: invalid value: valid range: (1..100)
+  ERROR: line 23: invalid value: valid range: (1..100)
   Do you want to edit again ('n' will abort) [y/n] ? n
   pawactl (/dest): 
 
@@ -131,6 +139,12 @@ CHANGES:
 1.08 	11 aug 2003 
 	- more %vdirs checking at startup
 	- vi/cat now use 'desc' instead of 'var' when column is fnamcol
+
+1.09	03 feb 2004
+	- delcp option: when saving a file this var will also checked 
+	  against duplicate entries in other files in this dir (unique test)
+	- delcp now is called 'uniq', print out warning msg when delcp used
+	- added 'vgrep' command
 
 COPYRIGHT:
 ----------
@@ -181,15 +195,15 @@ TESTING:
 
 The test currently is only a dummy because I don't know how to test
 an interactive shell across many different platforms and terminals.
-Workaround: Do a test of all required modules.
+Workaround: Do a test of all required modules. Run the sample program pawactl.
 
 
 CVS INFO:
 --------
 Last Update:		$Author: marvin $
-Update Date:		$Date: 2003/08/11 13:58:27 $
+Update Date:		$Date: 2004/05/28 14:32:44 $
 Source File:		$Source: /home/cvsroot/tools/FileSystem/README,v $
-CVS/RCS Revision:	$Revision: 1.9 $
+CVS/RCS Revision:	$Revision: 1.11 $
 Status:			$State: Exp $
 
 

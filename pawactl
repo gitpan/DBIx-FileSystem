@@ -5,9 +5,9 @@
 # pawactl   : packet warehouse control program
 #
 # Last Update:		$Author: marvin $
-# Update Date:		$Date: 2003/08/11 13:58:27 $
+# Update Date:		$Date: 2004/05/28 14:32:44 $
 # Source File:		$Source: /home/cvsroot/tools/FileSystem/pawactl,v $
-# CVS/RCS Revision:	$Revision: 1.6 $
+# CVS/RCS Revision:	$Revision: 1.8 $
 # Status:		$State: Exp $
 # 
 # Imagine a warehouse for packet distribution: Some well known senders are
@@ -19,8 +19,7 @@
 #     the sender is allowed to send packets
 #   - If the packet is Ok the warehouse process will put it into the warehouse
 #   - When the final receiver is ready the warehouse process will deliver the
-#     packet from the warehouse to the final destination. The warehouse
-#     process will read the destination from the config (table 'source')
+#     packet from the warehouse to the final destination. 
 #
 # All the config for the warehouse process will be put into the database given
 # below as well as the warehouse itself. The warehouse will be under complete 
@@ -40,7 +39,7 @@
 # 
 #  - directory 'dest':
 #     - all files have comment field wich 'll' will show
-#     - mars moon and neptun cannot be removed because they are referenced
+#     - mars moon and venus cannot be removed because they are referenced
 #     - sun cannot be removed because it is protected by &myrmcheck function
 #     - The 'Address' variable's description consists of three lines
 #     - The 'Delay1' variable additionally has a custom range check function
@@ -50,9 +49,11 @@
 #         database constraint 'NOT NULL'. Note the errormessage when saving a
 #         file with MaxPacketSize = empty comes from the database.
 #  - directory 'source':
-#     - commands sum,cat,vi take care of the default file 'generic'
+#     - commands sum,cat,vi,vgrep take care of the default file 'generic'
 #     - file generic can not be removed because it is the defaultfile
-#     - variable 'SourceID' will be set to NULL when copying a file (delcp)
+#     - variable 'SourceID' has option 'uniq' set: This var will be set to 
+#	NULL when copying a file and will be checked against duplicates values 
+# 	of this var in all other files of this directory.
 #     - variable 'Distance' must be set because of a custom value check 
 #         function &mydefcheck. Note the errormessage is much more descriptive
 #         (incl. line number) when saving a file where Distance is not set.
@@ -71,11 +72,23 @@
 #		make
 #		perl -Iblib/lib pawactl
 #
+#	first you need to setup the database with examples:
+#
+#		perl -Iblib/lib pawactl recreatedb
+#
 # License:
 #   You may distribute under the terms of the GNU General Public License.
 #
 # CVS/RCS Log:
 # $Log: pawactl,v $
+# Revision 1.8  2004/05/28 14:32:44  marvin
+# - rename delcp --> uniq
+# - new command: vgrep
+# - command 'new' removed
+#
+# Revision 1.7  2004/01/29 19:16:45  marvin
+# - delcp option now also checks for uniqueness
+#
 # Revision 1.6  2003/08/11 13:58:27  marvin
 # extended %vdirs check at startup
 #
@@ -144,9 +157,11 @@ my %vdirs =
        srcid => 				# columnname in DB
        { type	=> 'char',
 	 len 	=> 4,
+	 colopt=> 'UNIQUE',			# optional, but useful here
 	 var	=> 'SourceID',
 	 desc	=> "Internal source idenficator (4 characters)",
-	 delcp => 1,				# optional: 1: delete when cp
+	 uniq 	=> 1,				# optional: 1: uniq and delete
+	 					#   when copy with cp
 	 pos	=> $pos++,
        },
        dist => 					# columnname in DB
@@ -442,11 +457,11 @@ sub fill_with_dummies {
   $r=$dbh->do( "update source set srcid='----',dist=-1");
 
   $dbh->do( "$inssource ('factory1','BBF1',224,'moon')" );
-  $dbh->do( "$inssource ('factory2','BBF2',576,'mars')" );
+  $dbh->do( "$inssource ('factory2','BBF2',576,'venus')" );
   $dbh->do( "$inssource ('acity','CIA',54565,'mars')" );
   $dbh->do( "$inssource ('bcity','CIB',2434,'moon')" );
   $dbh->do( "$inssource ('kcity','CIK',4455,'moon')" );
-  $dbh->do( "$inssource ('fromfar',NULL,1000000,'mars'" );
+  $dbh->do( "$inssource ('fromfar',NULL,1000000,'mars')" );
 
   $dbh->do( "$insdest ('moon','not a planet','nearby',77,80,88)" );
   $dbh->do( "$insdest ('venus','a female planet','direction sun',12,33,67)" );
@@ -456,14 +471,14 @@ sub fill_with_dummies {
 
   $dbh->do( "$inswh ('kr3345',123456700,42,true,'2003-03-04','moon')" );
   $dbh->do( "$inswh ('kr7000',123456702,42,true,'2003-03-03','moon')" );
-  $dbh->do( "$inswh ('um3345',123456703,42,true,'2003-03-01','moon')" );
+  $dbh->do( "$inswh ('um1345',123456703,42,true,'2003-03-01','moon')" );
   $dbh->do( "$inswh ('um2545',123456704,42,false,'2003-03-01','mars')" );
-  $dbh->do( "$inswh ('um4678',123456705,42,true,'2003-03-04','mars')" );
-  $dbh->do( "$inswh ('um7766',123456006,42,false,'2003-03-04','mars')" );
-  $dbh->do( "$inswh ('um3333',123456707,42,true,'2003-03-04','mars')" );
-  $dbh->do( "$inswh ('um5565',123456708,42,false,'2003-01-04','mars')" );
-  $dbh->do( "$inswh ('um5545',123456709,42,true,'2003-01-02','mars')" );
-  $dbh->do( "$inswh ('sx0001',123456700,42,false,'2003-02-24','mars')" );
+  $dbh->do( "$inswh ('um3678',123456705,42,true,'2003-03-04','mars')" );
+  $dbh->do( "$inswh ('um4766',123456006,42,false,'2003-03-04','mars')" );
+  $dbh->do( "$inswh ('um5333',123456707,42,true,'2003-03-04','mars')" );
+  $dbh->do( "$inswh ('um6565',123456708,42,false,'2003-01-04','mars')" );
+  $dbh->do( "$inswh ('um7545',123456709,42,true,'2003-01-02','mars')" );
+  $dbh->do( "$inswh ('sx0001',123456700,42,false,'2003-02-24','venus')" );
   $dbh->do( "$inswh ('sx0002',123456711,42,false,'2003-02-24','moon')" );
   $dbh->do( "$inswh ('sx0034',123456712,42,false,'2003-02-22','moon')" );
 
