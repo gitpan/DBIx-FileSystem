@@ -1,0 +1,164 @@
+
+WHAT AM I
+---------
+
+File README for DBIx::FileSystem
+
+DBIx::FileSystem - Manage database tables like a filesystem
+
+   2003  by Alexander Haderer
+
+   You may distribute under the terms of the GNU General Public License.
+
+
+DESCRIPTION:
+------------
+
+from the manpage:
+
+The module DBIx::FileSystem offers you a filesystem like view to
+database tables. To interact with the database tables, FileSystem
+implements a command line shell which offers not only a subset of well
+known shell commands to navigate, view and manipulate data in tables, but
+also gives the convenience of history, command line editing and tab
+completion. FileSystem sees the database as a filesystem: each
+table is a different directory with the tablename as the directory
+name and each row in a table is a file within that directory. 
+
+The motivation for FileSystem was the need for a terminal based
+configuration interface to manipulate database entries which are used
+as configuration data for a server process. FileSystem is neither
+complete nor a replacement for dbish or other full-feature SQL shells
+or editors. Think of FileSystem as a replacement for a Web/CGI based
+graphical user interface for manipulating database contents.
+
+
+EXAMPLE:
+--------
+
+The file pawactl shows the usage of DBIx::FileSystem. It implements 
+the configure shell of a virtual package warehouse. Sample session:
+
+----------> pawactl sample session start --------->
+  pawactl (/source): ls
+  (dest)          acity           factory2        lcity           
+  (source)        bcity           generic         
+  (warehouse)     factory1        kcity           
+  pawactl (/source): cat bcity 
+  #
+  # Settings for SourceName 'bcity' (defaults: 'generic')
+  #
+  # - this is a comment, comments always start in the first column.
+  # - all lines begin in the first column or are blank lines
+  # - a unset variable will write NULL into the database column
+  # - unset variables use the default values
+  #
+
+  #
+  # SourceID
+  # Internal source idenficator (4 characters)
+  #
+  # default: ----
+  #
+  SourceID = CIB
+
+  ... more file contents ...
+
+  pawactl (/source): sum bcity 
+  SourceID     = CIB
+  Distance     = 2434
+  Destination  = moon
+  pawactl (/source): cd dest 
+  pawactl (/dest): ls
+  (dest)          (warehouse)     moon            venus           
+  (source)        mars            neptun          
+  pawactl (/dest): rm venus
+  rm: cannot remove: file 'venus' referenced by:
+    source/factory2
+    warehouse/sx0001
+  pawactl (/dest): vi venus
+
+     ... vi session ...
+     ... save & quit ...
+
+
+
+  ERROR: line 19: invalid value: valid range: (1..100)
+  Do you want to edit again ('n' will abort) [y/n] ? n
+  pawactl (/dest): 
+
+<---------- pawactl sample session end <---------
+
+CHANGES:
+--------
+
+1.00	24 Mar 2003
+	initial version
+
+1.01	8 Apr 2003
+	- rmcheck option added
+	- volok option added
+	- vi now can create new files (usefull with 'NOT NULL' constraint)
+
+
+COPYRIGHT:
+----------
+
+You may distribute under the terms of either the GNU General Public
+License or the Artistic License, as specified in the Perl README file.
+
+
+HOW TO GET THE LATEST VERSION:
+------------------------------
+
+Look at CPAN.
+
+
+IF YOU HAVE PROBLEMS:
+---------------------
+
+Please send comments and bug-reports to <afrika@cpan.org>
+
+
+REQUIREMENTS:
+-------------
+
+  - build, test and install Perl 5         (at least 5.003)
+  - build, test and install the DBI module (at least 1.00)
+  - build, test and install Gnu::ReadLine  (recommended)
+
+
+PLATFORMS:
+----------
+
+  This release of DBIx::FileSystem has been developed using FreeBSD.
+
+
+INSTALLATION:
+-------------
+
+1.   perl Makefile.PL
+2.   make
+3.   make install
+
+( 1. to 2. as normal user, not as root ! )
+
+
+TESTING:
+--------
+
+no test available.
+
+CVS INFO:
+--------
+Last Update:		$Author: marvin $
+Update Date:		$Date: 2003/04/09 11:07:10 $
+Source File:		$Source: /home/cvsroot/tools/FileSystem/README,v $
+CVS/RCS Revision:	$Revision: 1.1.1.1 $
+Status:			$State: Exp $
+
+
+---------------------------------------------------------------------------
+   Alexander Haderer   					afrika@cpan.org
+---------------------------------------------------------------------------
+
