@@ -22,13 +22,18 @@
 # Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 # Last Update:		$Author: marvin $
-# Update Date:		$Date: 2004/05/28 14:32:43 $
+# Update Date:		$Date: 2007/06/15 13:27:40 $
 # Source File:		$Source: /home/cvsroot/tools/FileSystem/FileSystem.pm,v $
-# CVS/RCS Revision:	$Revision: 1.13 $
+# CVS/RCS Revision:	$Revision: 1.14 $
 # Status:		$State: Exp $
 # 
 # CVS/RCS Log:
 # $Log: FileSystem.pm,v $
+# Revision 1.14  2007/06/15 13:27:40  marvin
+# - added bitfield/flags type as an extension of type 'int' (option flags =>)
+# - added Postgres speicific types cidr and inet
+# - minor fixes in code and docs
+#
 # Revision 1.13  2004/05/28 14:32:43  marvin
 # - rename delcp --> uniq
 # - new command: vgrep
@@ -79,7 +84,7 @@ use strict;
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
 use Exporter;
 
-$DBIx::FileSystem::VERSION = '1.09';
+$DBIx::FileSystem::VERSION = '1.2';
 
 @ISA = qw( Exporter );
 @EXPORT_OK = qw(
@@ -804,7 +809,7 @@ sub dbshell_completion {
     $text =~ s/\]/\\\]/g;
     $text =~ s/\$/\\\$/g;
     $text =~ s/\^/\\\^/g;
-    
+
     unless ($state) {
       undef @name;
       $list_index = 0;
@@ -845,7 +850,7 @@ sub dbshell_completion {
 # check_vdirs_struct()
 #
 sub check_vdirs_struct() {
-  my $pre = "fcsictl: internal error: vdirs structure:\n ";
+  my $pre = "internal error: vdirs structure:\n ";
   foreach my $dir (keys(%{$vdirs}) ) {
     # init refby: 
     # a hash holding the dir (key) and list of columns (value) this dir 
@@ -934,6 +939,41 @@ sub check_vdirs_struct() {
 	print "$pre dir '$dir', column '$col', elem 'ref': no dir '$cols->{$col}{ref}'\n"; 
 	return 1;
       }
+
+      # check for flags
+      if( exists $cols->{$col}{flags} ) {
+	if(  $cols->{$col}{type} ne 'int' ) {
+	  print "$pre dir '$dir', column '$col', when using 'flags' type must be 'int'\n";
+	  return 1;
+	}
+	unless( ref( $cols->{$col}{flags} ) eq "HASH" ) {
+	  print "$pre dir '$dir', column '$col', 'flags' must be a hash\n";
+	  return -1;
+	}
+	foreach my $i (sort keys(%{$cols->{$col}{flags} }) ) {
+	  if( $i =~ /\D/ ) {
+	    print "$pre dir '$dir', column '$col', flags: bitno must be an int\n";
+	    return 1;
+	  }
+	  unless( ref( $cols->{$col}{flags}{$i} ) eq "ARRAY" ) {
+	    print "$pre dir '$dir', column '$col', bitno '$i': missing array with flagname + flagdescritpion\n";
+	    return -1;
+	  }
+	  unless( defined $cols->{$col}{flags}{$i}->[0] ) {
+	    print "$pre dir '$dir', column '$col', bitno '$i': missing flagname\n";
+	    return -1;
+	  }
+	  if( $cols->{$col}{flags}{$i}->[0] =~ / / ) {
+	    print "$pre dir '$dir', column '$col', bitno '$i': flagname must be a single word\n";
+	    return -1;
+	  }
+	  unless( defined $cols->{$col}{flags}{$i}->[1] ) {
+	    print "$pre dir '$dir', column '$col', bitno '$i': missing flagdescription\n";
+	    return -1;
+	  }
+	}
+      }
+
       # setup refby
       if( defined $cols->{$col}{ref} ) {
 	push @{$vdirs->{$cols->{$col}{ref}}{refby}{$dir} }, $col;
@@ -942,9 +982,11 @@ sub check_vdirs_struct() {
       if( defined $cols->{$col}{type} and $vdirs->{$dir}{edit}==1) {
 	if( $cols->{$col}{type} ne 'char' and
 	    $cols->{$col}{type} ne 'int' and
-	    $cols->{$col}{type} ne 'smallint' )
+	    $cols->{$col}{type} ne 'smallint' and
+	    $cols->{$col}{type} ne 'inet' and
+	    $cols->{$col}{type} ne 'cidr' )
 	{
-	  print "$pre dir '$dir', column '$col', type must be one of char/int/smallint when edit=1\n"; 
+	  print "$pre dir '$dir', column '$col', type must be one of char/int/smallint/inet/cidr when edit=1\n"; 
 	  return 1;
 	}
       }
@@ -1081,7 +1123,8 @@ sub recreate_db_tables() {
       if( (length($df)<=$vdirs->{$tab}{cols}{$fnc}{len}) and !($df=~/\W+/)) {
 	$r = $dbh->do( "insert into $tab ($fnc) values ('$df')");
 	if( !defined $r or $r==0 ) {
-	  print "ERROR: couldn't create default entry '$df' in '/$tab'\n";
+	  print "ERROR: couldn't create default entry '$df' in '/$tab':" .
+	    $dbh->errstr;
 	}
       }else{
 	print "ERROR: illegal or to long default filename '$df' in '/$tab'\n";
@@ -1118,6 +1161,7 @@ sub print_file() {
   my @defaults;
   my @descs;
   my @isref;
+  my @flags;
   my $select = "select ";
   my $retval = 2;
 
@@ -1133,7 +1177,8 @@ sub print_file() {
       push @vars,  $var;
       push @dbvars,$col;
       push @descs, $cols->{$col}{desc};
-      push @isref, defined $cols->{$col}{ref} ? $cols->{$col}{ref} : undef;
+      push @isref, exists $cols->{$col}{ref} ? $cols->{$col}{ref} : undef;
+      push @flags, exists $cols->{$col}{flags} ? $cols->{$col}{flags} : undef;
       $select .=  "$col,";
     }
   chop $select;
@@ -1170,16 +1215,10 @@ sub print_file() {
       # print short version (command 'sum')
       $retval = 0;
       for( my $i=0; $i<= $#values; $i++ ) {
-	printf $FH "%-${maxvarlen}s ", $vars[$i];
-	if( @defaults ) {
-	  if( defined $values[$i] ) {
-	    print $FH  " = $values[$i]\n";
-	  }else{
-	    print $FH defined $defaults[$i] ? "-> $defaults[$i]\n" :"-> $em\n";
-	  }
-	}else{
-	  print $FH defined $values[$i] ? "= $values[$i]\n" : "= $em\n";
-	}
+	print $FH &var_value_s( $maxvarlen, $vars[$i], $values[$i], 
+				$defaults[$i], $flags[$i],
+				@defaults ? 1 : 0
+			      );
       }
     }else{
       $retval = 1;
@@ -1228,10 +1267,11 @@ sub print_file() {
 	}
 	print $FH "#\n";
 	if( @defaults ) {
+	  my $def = build_flags( $defaults[$i], $flags[$i] );
 	  print $FH  "# default: ";
-	  print $FH  defined $defaults[$i] ? "$defaults[$i]\n#\n" : "$em\n#\n";
+	  print $FH  defined $def ? "$def\n#\n" : "$em\n#\n";
 	}
-	print $FH &var_value( $vars[$i], $values[$i], $isref[$i] );
+	print $FH &var_value_v( $vars[$i],$values[$i],$isref[$i],$flags[$i] );
       }
       print $FH "\n# end of file '$fnam'\n";
     }
@@ -1240,16 +1280,17 @@ sub print_file() {
 }
 
 ########################################################################
-# var_value( var, value, ref )
+# var_value_v( var, value, ref, flags )
 # return a var = value string for verbose print_file()
 #   var:	variable name (long version for cat/vi)
 #   value:	the value of var or undef
 #   ref:	the dir/table referenced by this var or undef
+#   flags:	anon hashref with flags setup from vdir or undef
 # return:
 # 	the string to be printed
 #
-sub var_value() {
-  my ($var, $value, $ref ) = @_;
+sub var_value_v() {
+  my ($var, $value, $ref, $flags ) = @_;
   my $s = '';
   if( defined $ref ) {
     # query db
@@ -1283,10 +1324,115 @@ sub var_value() {
       $s .= "### NOTE: This value will be rejected when saving!\n";
       $s .= "$var = $value\n";
     }
+  }elsif( defined $flags ) {
+    my $i;
+    my $maxlen = 0;
+    for( $i=0; $i<32; $i++ ) {
+      if( exists $flags->{$i} ) {
+	if( length( $flags->{$i}[0] ) > $maxlen ) {
+	  $maxlen = length( $flags->{$i}[0] );
+	}
+      }
+    }
+    $s .= "# Flags:\n";
+    my $hash = defined $value ? '' : '#';
+    my $on = "$hash  On:\n";
+    my $off = "$hash  Off:\n";
+    for( $i=0; $i<32; $i++ ) {
+      if( exists $flags->{$i} ) {
+	my $first = 1;
+	foreach my $dscline (split '\n', $flags->{$i}[1] ) {
+	  if( $first ) {
+	    $first = 0;
+	    $s .= sprintf( "#  %${maxlen}s: %s\n",$flags->{$i}[0], $dscline );
+	  }else{
+	    $s .= sprintf( "#  %${maxlen}s  %s\n", ' ', $dscline );
+	  }
+	}
+	if( $value & (1<<$i) ) {
+	  $on .= "$hash    $flags->{$i}[0]\n";
+	}else{
+	  $off .= "$hash    $flags->{$i}[0]\n";
+	}
+      }
+    }
+    if( defined $value ) {
+      $s .= "#\n$var = {\n$on$off}\n";
+    }else{
+      $s .= "#\n$var = \n#$var = {\n$on$off#}\n";
+    }
   }else{
     $s .= "$var = ";
     $s .= "$value" if defined $value;
     $s .= "\n";
+  }
+  return $s;
+}
+
+########################################################################
+# var_value_s( aligned, var, value, flags, hasdefault )
+# return a var = value string for short output (sum & vgrep)
+#   maxvarlen:	if not 0: align all '=' using $maxvarlen, else: no alignment
+#   var:	variable name (long version for cat/vi)
+#   value:	the value of var or undef
+#   default:	the default value of var or undef
+#   flags:	anon hashref with flags setup from vdir or undef
+#   hasdefault:	1: we have a defaults file  0: we don't have
+# return:
+# 	the string to be printed
+#
+sub var_value_s() {
+  my ( $maxvarlen, $var, $value, $default, $flags, $hasdefault ) = @_;
+  my $s = '';
+  my $i;
+
+  if( defined $flags ) {
+    $value = build_flags( $value, $flags );
+    $default = build_flags( $default, $flags );
+  }
+
+  if( $maxvarlen ) {
+    $s = sprintf( "%-${maxvarlen}s ", $var );
+  }else{
+    $s = "$var ";
+  }
+  if( $hasdefault ) {
+    if( defined $value ) {
+      $s .= "= $value\n";
+    }else{
+      $s .= defined $default ? "-> $default\n" : "-> *unset*\n";
+    }
+  }else{
+    $s .= defined $value ? "= $value\n" : "= *unset*\n";
+  }
+  return $s;
+}
+
+########################################################################
+# build_flags( value, flags )
+# return a string containing all flags set in value
+#   value:	the value of var or undef
+#   flags:	anon hashref with flags setup from vdir or undef
+# return:
+# 	the string of set flags if any flags are set
+#	'' if no flags set
+#	undef if value or flags is undef
+#
+sub build_flags() {
+  my ( $value, $flags ) = @_;
+  my $s;
+  my $i;
+
+  if( defined $flags and defined $value ) {
+    $s = '';
+    for( $i=0; $i<32; $i++ ) {
+      if( exists $flags->{$i} ) {
+	if( $value & (1<<$i) ) {
+	  $s .= "$flags->{$i}[0],";
+	}
+      }
+    }
+    chop $s;	# chop ,
   }
   return $s;
 }
@@ -1342,8 +1488,8 @@ sub get_who_refs_me() {
 # insert_flag:	0: $sql --> 'update' string    1: $sql --> 'insert' string
 #
 # return
-# 	a list: ($linenumber,$err, $sql):
-#	- $linennumber: when an error was detected: the errornous line
+# 	a list: ($lineno,$err, $sql):
+#	- $lineno: when an error was detected: the errornous line
 # 	- $err: when an error was detected: a one line error text, else: undef 
 #	        when $err is set then $sql is invalid
 #	- $sql: when no error was detected: a SQL insert/update string or ''
@@ -1380,16 +1526,16 @@ sub create_sql_from_file( ) {
   # phase 1: do the basic checks, remember var values and their lineno for 
   #	     phase 2 check (user supplied check functions)
   open( TF, $tmpfile ) or return ( 1,"can't open tempfile '$tmpfile'", undef );
-  while( <TF> ) {
+ MAIN: while( <TF> ) {
     $line = $_;
     $lineno++;
     chop( $line );
     $line =~ s/^\s*//;		# remove leading space
-    next if $line =~ /^$/;	# skip empty lines
-    next if $line =~ /^\#.*/;	# skip comment lines
+    next MAIN if $line =~ /^$/;	# skip empty lines
+    next MAIN if $line =~ /^\#.*/;	# skip comment lines
     unless( $line =~ /=/ ) {	# missing = ?
       $err = "line $lineno: missing '='";
-      last;
+      last MAIN;
     }
     ($var,$val) = split( /=/, $line, 2 );
     $var =~ s/\s*$//;		# remove trailing space
@@ -1398,14 +1544,14 @@ sub create_sql_from_file( ) {
 
     if( length($var)==0 or $var =~ /\W+/ ) {	# var name ok?
       $err = "line $lineno: syntax error";
-      last;
+      last MAIN;
     }
 
     # check if variable name exists
     if( defined $varcol{$var} ) {
       if( defined $isset{$var} ) {
 	$err = "line $lineno: variable '$var' set twice"; 
-	last;
+	last MAIN;
       }
 
       my $col = $varcol{$var};
@@ -1422,12 +1568,12 @@ sub create_sql_from_file( ) {
 	    my $rlen = $vdirs->{$rdir}{cols}{$rfnc}{len};
 	    if( $vlen > $rlen ) {
 	      $err = "line $lineno: value longer than $rlen"; 
-	      last;
+	      last MAIN;
 	    }
 	  }else{
 	    if( $vlen > 1 ) {
 	      $err = "line $lineno: value longer than 1"; 
-	      last;
+	      last MAIN;
 	    }
 	  }
 	  # check if val exists in referneced table
@@ -1437,18 +1583,18 @@ sub create_sql_from_file( ) {
 	  unless( $st ) {
 	    $err = "$PRG: internal error: prepare 'exist' query '$rdir':\n";
   	    $err .= "  $DBI::errstr\n";
-	    last;
+	    last MAIN;
 	  }
 	  unless( $st->execute( $val ) ) {
 	    $err = "$PRG: internal error: exec 'exist' query '$rdir':\n";
   	    $err .= "  $DBI::errstr\n";
-	    last;
+	    last MAIN;
 	  }
 	  $dbval = $st->fetchrow_array();
 	  $st->finish();
 	  unless( defined $dbval ) {
 	    $err = "line $lineno: reference '$val' does no exist in '$rdir'";
-	    last;
+	    last MAIN;
 	  }
 	  if( $insert_flag ) {
 	    $sql1 .= "$col,";
@@ -1464,12 +1610,12 @@ sub create_sql_from_file( ) {
 	  if( defined $cols->{$col}{len} ) {
 	    if( $vlen > $cols->{$col}{len} ) {
 	      $err = "line $lineno: value longer than $cols->{$col}{len}";
-	      last;
+	      last MAIN;
 	    }
 	  }else{
 	    if( $vlen > 1 ) {
 	      $err = "line $lineno: value longer than 1"; 
-	      last;
+	      last MAIN;
 	    }
 	  }
 	  if( $insert_flag ) {
@@ -1483,13 +1629,57 @@ sub create_sql_from_file( ) {
 
 	}elsif( $cols->{$col}{type} eq 'int' ) {
 	  # type int
-	  unless( $val =~ /^-?\d+$/ ) {
-	    $err = "line $lineno: value not an integer"; 
-	    last;
-	  }
-	  if( $val <= -2147483648 or $val >= 2147483647 ) {
-	    $err = "line $lineno: value out of int range"; 
-	    last;
+	  if( exists $cols->{$col}{flags} ) {	# flags: process the flags
+	    if( $val eq '{' ) {
+	      $val = 0;
+	      my $mode = '{';
+	      my $l;
+	      my $flagfound;
+	    FLAGS: while( defined ( $l = <TF> ) ) {
+		chop( $l );
+		$lineno++;
+		$l =~ s/\s*$//;			# remove trailing space
+		$l =~ s/^\s*//;			# remove leading space
+		next FLAGS if $l =~ /^$/;	# skip empty lines
+		next FLAGS if $l =~ /^\#.*/;	# skip comment lines
+		if( $l eq 'On:' )  { $mode = 'on';  next FLAGS; }
+		if( $l eq 'Off:' ) { $mode = 'off'; next FLAGS; }
+		if( $l eq '}' ) { 
+		  $val = 'NULL' if $mode eq '{';
+		  $mode = '}';
+		  last FLAGS;
+		}
+		$flagfound = 0;
+		foreach my $bit ( keys( %{$cols->{$col}{flags}} ) ) {
+		  if( $cols->{$col}{flags}{$bit}[0] eq $l ) {
+		    $flagfound = 1;
+		    $val |= (1<<$bit) if $mode eq 'on';
+		    last;
+		  }
+		}
+		unless( $flagfound ) {
+		  $err = "line $lineno: unknown flag '$l' for '$var'";
+		  last MAIN;
+		}
+	      } # loop FLAGS
+
+	      if( $mode ne '}' ) {
+		$err = "line $lineno: missing '}' from flags section";
+		last MAIN;
+	      }
+	    }else{
+	      $err = "line $lineno: flags must start with '{'";
+	      last MAIN;
+	    }
+	  }else{				# no flags, normal int
+	    unless( $val =~ /^-?\d+$/ ) {
+	      $err = "line $lineno: value not an integer"; 
+	      last MAIN;
+	    }
+	    if( $val <= -2147483648 or $val >= 2147483647 ) {
+	      $err = "line $lineno: value out of int range"; 
+	      last MAIN;
+	    }
 	  }
 	  if( $insert_flag ) {
 	    $sql1 .= "$col,";
@@ -1504,11 +1694,11 @@ sub create_sql_from_file( ) {
 	  # type smallint
 	  unless( $val =~ /^-?\d+$/ ) {
 	    $err = "line $lineno: value not an integer"; 
-	    last;
+	    last MAIN;
 	  }
 	  if( $val <= -32768 or $val >= 32767 ) {
 	    $err = "line $lineno: value out of smallint range"; 
-	    last;
+	    last MAIN;
 	  }
 	  if( $insert_flag ) {
 	    $sql1 .= "$col,";
@@ -1519,12 +1709,64 @@ sub create_sql_from_file( ) {
 	  $filevars{$col}       = $val;
 	  $filevarslineno{$col} = $lineno;
 
+	}elsif( $cols->{$col}{type} eq 'cidr' ) {
+	  # type cidr
+	  my $st;
+	  my $dbval;
+	  $st = $dbh->prepare( "select cidr '$val'" );
+	  unless( $st ) {
+	    $err = "$PRG: internal error: select cidr\n";
+	    $err .= "  $DBI::errstr\n";
+	    last MAIN;
+	  }
+	  unless( $st->execute(  ) ) {
+	    $err = "$DBI::errstr\n";
+	    last MAIN;
+	  }
+	  ($dbval) = $st->fetchrow_array();
+	  $st->finish();
+
+	  if( $insert_flag ) {
+	    $sql1 .= "$col,";
+	    $sql2 .= "'$val',";
+	  }else{
+	    $sql1 .= "$col='$val',";
+	  }
+	  $filevars{$col}       = $val;
+	  $filevarslineno{$col} = $lineno;
+
+	}elsif( $cols->{$col}{type} eq 'inet' ) {
+	  # type inet
+	  my $st;
+	  my $dbval;
+	  $st = $dbh->prepare( "select inet '$val'" );
+	  unless( $st ) {
+	    $err = "$PRG: internal error: select inet\n";
+	    $err .= "  $DBI::errstr\n";
+	    last MAIN;
+	  }
+	  unless( $st->execute(  ) ) {
+	    $err = "$DBI::errstr\n";
+	    last MAIN;
+	  }
+	  ($dbval) = $st->fetchrow_array();
+	  $st->finish();
+
+	  if( $insert_flag ) {
+	    $sql1 .= "$col,";
+	    $sql2 .= "'$val',";
+	  }else{
+	    $sql1 .= "$col='$val',";
+	  }
+	  $filevars{$col}       = $val;
+	  $filevarslineno{$col} = $lineno;
+
 	}else{
 	  # type unknown!
 	  $err = "line $lineno: unsupported datatype from vdirs for $var"; 
-	  last;
+	  last MAIN;
 	}
-      }else{
+      }else{			 # $vlen == 0
 	if( $insert_flag ) {
 	  $sql1 .= "$col,";
 	  $sql2 .= "NULL,";
@@ -1537,7 +1779,7 @@ sub create_sql_from_file( ) {
       $isset{$var} = 1;	# remember that this var is set
     }else{
       $err = "line $lineno: unknown variable '$var'";
-      last;
+      last MAIN;
     }
   }
   close( TF );
@@ -1621,7 +1863,7 @@ sub want_to_edit_again() {
   my $errortext = shift;
   my $inp = '';
   my $IN = $term->IN;
-  print $OUT "\n\n\n\n\n\n\nERROR: $errortext\n";
+  print $OUT "\n\n\n\n\n\n\n$errortext\n";
   while( $inp ne 'y' and $inp ne 'n' ) {
     print $OUT "Do you want to edit again ('n' will abort) [y/n] ? ";
     $inp = <$IN>; 
@@ -1647,8 +1889,10 @@ sub do_vgrep() {
   my $var;
   my @values;
   my @defaults;
+  my @flags;
   my $fnam;
   my $em = "*unset*";
+  my $hasdefault;
 
   # prepare db query
   my $fnc = $vdirs->{$vwd}{fnamcol};
@@ -1663,6 +1907,7 @@ sub do_vgrep() {
       $var = $cols->{$col}{var};
       push @vars,  $var;
       push @dbvars,$col;
+      push @flags, exists $cols->{$col}{flags} ? $cols->{$col}{flags} : undef;
       $select .=  "$col,";
       $seldef .=  "$col,";
     }
@@ -1703,18 +1948,16 @@ sub do_vgrep() {
   while (($fnam, @values ) = $st->fetchrow_array() ) {
     if( @values ) {
       for( my $i=0; $i<= $#values; $i++ ) {
-	my $line = $vars[$i];
-	my $eq = " = ";
-	if( @defaults ) {
-	  if( defined $values[$i] ) {
-	    $line .= "$eq$values[$i]\n";
-	  }else{
-	    $eq = " -> " if $fnam ne $vdirs->{$vwd}{defaultfile};
-	    $line .= defined $defaults[$i] ? "$eq$defaults[$i]\n" :"$eq$em\n";
-	  }
+	if( $vdirs->{$vwd}{defaultfile} and 
+	    $vdirs->{$vwd}{defaultfile} ne $fnam ) {
+	  $hasdefault = 1;
 	}else{
-	  $line .= defined $values[$i] ? "$eq$values[$i]\n" : "$eq$em\n";
+	  $hasdefault = 0;
 	}
+	
+	my $line = &var_value_s( 0, $vars[$i], $values[$i], 
+				 $defaults[$i], $flags[$i], $hasdefault
+			       );
 	printf $OUT "%${fnlen}s: %s", $fnam, $line if $line =~ /$pattern/i;
       }
     }
@@ -1970,6 +2213,11 @@ The DIRECTORY_SETTING defines the layout of a directory (database table):
     # will be automatically created from 
     # &recreatedb() and cannot be removed. The
     # defaultfile is only usefull when edit = 1.
+    # Note: directories which have a column with
+    # colopt => 'NOT NULL' constraint (see below):
+    # the constraint must also set a default value like
+    # colopt => 'DEFAULT 0 NOT NULL', otherwise the creation
+    # of the database table will fail.
     defaultfile => 'filename',	
 
     # optional: Function reference to a function 
@@ -2022,13 +2270,24 @@ The COLUMN_SETTING defines the layout of a column (database column).
     # message if the value is not ok.
     valok => \&myValCheck,			
 
-    # optional: When this option exists and is set
+    # optional: when this option exists and is set
     # then this column will be set to NULL 
     # when copying a file with 'cp'. When saving a
     # file the value entered must be uniq for this
     # variable in all files in the dir.
     # (formerly known as 'delcp' option)
     uniq => 1,			
+
+    # optional: when this option is set the variable
+    # behaves like a collection of flags. Each flag has
+    # a bit number ranging from 0..31, a one word flag name,
+    # and a long flag description. The value of the variable
+    # is the bitwise or of all flags set. The variable's column
+    # type COLUMN_TYPE must be integer: type => 'int', see below.
+    flags => { bitnumber => [ "flagname", "flag description" ],
+	       bitnumber => [ "flagname", "flag description" ],
+	       # more flags settings ...
+	     }
 
     # mandatory: Descriptive long variable name 
     # for this column. Will be used as an alias
@@ -2059,12 +2318,12 @@ normal column:
 
     # mandatory: database type for this column. 
     # Allowed types:
-    # - when this column acts as the filename
-    #   ('fnamcol'in DIRECTORY_SETTING): char
-    # - when edit=1 set in DIRECTORY_SETTING:
-    #   char, int, smallint
-    # - when edit=0 set in DIRECTORY_SETTING:
-    #   char, int, smallint, date, bool, ...
+    # - when this column acts as the filename ( see 'fnamcol'in
+    #   DIRECTORY_SETTING): char
+    # - when edit=1 set in DIRECTORY_SETTING: char, int, smallint
+    #   and if we have a Postgres backend: inet and cidr also
+    # - when edit=0 set in DIRECTORY_SETTING: char, int, smallint,
+    #   date, bool, ...
     type => 'dbtype',		
 
     # optional: length of column. Only usefull 
@@ -2072,9 +2331,9 @@ normal column:
     # column is used as the filename.
     len => NUMBER,		
 
-   
+
 ref-column:
-   
+
     # mandatory: A directory name of another 
     # directory. Allowed values for this variable
     # will be existing filenames from directory 
@@ -2255,6 +2514,8 @@ Usage: 'vgrep PATTERN'. Find a pattern in all files. Find all lines in
 all files in current dir where var/value pair matches PATTERN. Print 
 out matching lines. Ignore case when doing pattern matching. 
 Regex patterns will be ignored, all metacharacters will be quoted.
+vgrep does not search the comments, but only the var=value lines
+(like the result of command 'sum')
 
 
 =item vi
@@ -2304,11 +2565,16 @@ M:N relations currently not supported.
 
 composite primary keys currently not supported
 
+=item -
+
+The database types 'cidr' and 'inet' are tested with Postgres database
+and are expected to work with Postgres only.
+
 =back
 
 =head1 AUTHOR
 
-Alexander Haderer	alexander.haderer@charite.de
+Alexander Haderer	alexander.haderer@loescap.de
 
 =head1 SEE ALSO
 

@@ -5,9 +5,9 @@
 # pawactl   : packet warehouse control program
 #
 # Last Update:		$Author: marvin $
-# Update Date:		$Date: 2004/05/28 14:32:44 $
+# Update Date:		$Date: 2007/06/15 13:27:40 $
 # Source File:		$Source: /home/cvsroot/tools/FileSystem/pawactl,v $
-# CVS/RCS Revision:	$Revision: 1.8 $
+# CVS/RCS Revision:	$Revision: 1.9 $
 # Status:		$State: Exp $
 # 
 # Imagine a warehouse for packet distribution: Some well known senders are
@@ -45,9 +45,12 @@
 #     - The 'Delay1' variable additionally has a custom range check function
 #         that does additionaly check a dependency with Delay2
 #     - The 'Delay2' variable additionally has a custom range check function
+#     - The 'Options' variable is a bitfield using flags
 #     - The 'MaxPacketSize' variable must not be NULL because of the 
 #         database constraint 'NOT NULL'. Note the errormessage when saving a
 #         file with MaxPacketSize = empty comes from the database.
+#     - When using 'dbi:Pg' database driver we will also have a variable
+#	RemoteNet of type 'cidr' (this type is only available in Postgres)
 #  - directory 'source':
 #     - commands sum,cat,vi,vgrep take care of the default file 'generic'
 #     - file generic can not be removed because it is the defaultfile
@@ -58,6 +61,7 @@
 #         function &mydefcheck. Note the errormessage is much more descriptive
 #         (incl. line number) when saving a file where Distance is not set.
 #         Compare this with 'MaxPacketSize' in directory 'dest'
+#     - variable 'Properties' is a bitfield using flags
 #     - variable 'Destination' is a reference to directory dest. Only one 
 #         valid filename or an empty value can be entered here.
 #  - directory 'warehouse':
@@ -81,6 +85,11 @@
 #
 # CVS/RCS Log:
 # $Log: pawactl,v $
+# Revision 1.9  2007/06/15 13:27:40  marvin
+# - added bitfield/flags type as an extension of type 'int' (option flags =>)
+# - added Postgres speicific types cidr and inet
+# - minor fixes in code and docs
+#
 # Revision 1.8  2004/05/28 14:32:44  marvin
 # - rename delcp --> uniq
 # - new command: vgrep
@@ -114,7 +123,7 @@
 use DBIx::FileSystem qw( mainloop recreatedb );
 
 # database version string
-my $VERSION = "0001";	# our version string
+my $VERSION = "0002";	# our version string
 
 # DBI connect string    EDIT THIS! The database must exist!
 my $DBHOST = "dbi:Pg:dbname=warehouse;host=vinmari";
@@ -129,6 +138,8 @@ my $DBPWD = undef;
 my $PROGNAME = $0;
 $PROGNAME =~ s/.*\///;
 
+# ignore ctrl-c
+$SIG{INT} = 'IGNORE';
 
 ########################################################################
 # v i r t u a l   d i r e c t o r i e s   ( d b   t a b l e s )
@@ -169,6 +180,20 @@ my %vdirs =
 	 var	=> 'Distance',
 	 valok 	=> \&mydefcheck,		# custom value check function
 	 desc	=> "The distance between warehouse and source (integer)",
+	 pos	=> $pos++,			
+       },
+       prop => 					# columnname in DB
+       { type	=> 'int',			# int should be used for flags
+	 colopt	=> 'DEFAULT 0',			# optional, but useful here
+	 var	=> 'Properties',
+	 desc	=> "The special properties of this source",
+	 	 # bitno     flagname      flagdescription
+	 flags  => { 4 => [ "HasWater", "water available at source" ],
+		     5 => [ "HasRamp",  "has a ramp for loading all the ".
+			    "heavy stuff\nNote: this one has a newline" ],
+		     6 => [ "HasFuel",  "has gasoline station" ],
+		     7 => [ "HasAircondition",  "fresh and cool air there" ],
+		   },
 	 pos	=> $pos++,			
        },
        sendto =>		# now we have a ref, no type or len here
@@ -228,6 +253,19 @@ my %vdirs =
 	 desc	=> "The second delay when sending packets (1..100)",
 	 pos	=> $pos++,			
        },
+       opt => 					# columnname in DB
+       { type	=> 'int',			# int should be used for flags
+	 colopt	=> 'NOT NULL',			# optional, but useful here
+	 var	=> 'Options',
+	 desc	=> "The destination options for packet delivery",
+	 	 # bitno     flagname      flagdescription
+	 flags  => { 0 => [ "LongPacket", "can handle very long packets" ],
+		     1 => [ "ThinPacket", "can handle very thin packets" ],
+		     2 => [ "Sort",       "will sort packets automatically" ],
+		     3 => [ "Closed",     "closed for service" ],
+		   },
+	 pos	=> $pos++,			
+       },
        mps => 					# columnname in DB
        { type	=> 'smallint',
 	 colopt	=> 'NOT NULL',			# optional, but useful here
@@ -235,6 +273,15 @@ my %vdirs =
 	 desc	=> "The maximum packet size this destination accepts (smallint)",
 	 pos	=> $pos++,			
        },
+#      NOTE: The cidr type will only work with PostgreSql, we activate the 
+#      remnet entry automatically if we have a Pg Driver, see below
+#      remnet => 				# columnname in DB
+#      { type	=> 'cidr',
+#	 var	=> 'RemoteNet',
+#	 desc	=> "The remote ip adress range who is allowed to connect\n" .
+#	 	   "Format: X.X.X.X/N",
+#	 pos	=> $pos++,			
+#       },
      }, 
    },
 
@@ -286,8 +333,21 @@ my %vdirs =
 
      }, 
    },
-
   );
+
+
+# when using PostgreSql add a column with type 'cidr' to directory 'dest' to 
+# the end (pos = 100)
+if( $DBHOST =~ /^dbi:Pg/ ) {
+  $vdirs{'dest'}{cols}{'remnet'} = { 
+      type	=> 'cidr',
+      var	=> 'RemoteNet',
+      desc	=> "The remote ip adress range who is allowed to connect\n" .
+		   "Format: X.X.X.X/N",
+      pos	=> 100 },
+}
+
+
 
 ########################################################################
 # c u s t o m    c o m m a n d s
@@ -445,8 +505,8 @@ use DBI;
 sub fill_with_dummies {
   my $dbh;
   my $r;
-  my $inssource = "insert into source (fname,srcid,dist,sendto) values";
-  my $insdest = "insert into dest (fname,comment,addr,delay1,delay2,mps) values";
+  my $inssource = "insert into source (fname,srcid,dist,sendto,prop) values";
+  my $insdest = "insert into dest (fname,comment,addr,delay1,delay2,mps,opt) values";
   my $inswh = "insert into warehouse (fname,itim,dummy,flag,lcheck,dest) values";
 
   ($dbh = DBI->connect( $DBHOST, $DBUSER, $DBPWD,
@@ -456,18 +516,18 @@ sub fill_with_dummies {
   # set 'generic' default values
   $r=$dbh->do( "update source set srcid='----',dist=-1");
 
-  $dbh->do( "$inssource ('factory1','BBF1',224,'moon')" );
-  $dbh->do( "$inssource ('factory2','BBF2',576,'venus')" );
-  $dbh->do( "$inssource ('acity','CIA',54565,'mars')" );
-  $dbh->do( "$inssource ('bcity','CIB',2434,'moon')" );
-  $dbh->do( "$inssource ('kcity','CIK',4455,'moon')" );
-  $dbh->do( "$inssource ('fromfar',NULL,1000000,'mars')" );
+  $dbh->do( "$inssource ('factory1','BBF1',224,'moon',0)" );
+  $dbh->do( "$inssource ('factory2','BBF2',576,'venus',16)" );
+  $dbh->do( "$inssource ('acity','CIA',54565,'mars',48)" );
+  $dbh->do( "$inssource ('bcity','CIB',2434,'moon',112)" );
+  $dbh->do( "$inssource ('kcity','CIK',4455,'moon',240)" );
+  $dbh->do( "$inssource ('fromfar',NULL,1000000,'mars',128)" );
 
-  $dbh->do( "$insdest ('moon','not a planet','nearby',77,80,88)" );
-  $dbh->do( "$insdest ('venus','a female planet','direction sun',12,33,67)" );
-  $dbh->do( "$insdest ('mars','the red one','direction galaxy',8,16,999)" );
-  $dbh->do( "$insdest ('neptun','only a small dest','nearby sun',3,76,2121)" );
-  $dbh->do( "$insdest ('sun','bright and big','the center',7,55,9)" );
+  $dbh->do( "$insdest ('moon','not a planet','nearby',77,80,88,0)" );
+  $dbh->do( "$insdest ('venus','a female planet','direction sun',12,33,67,1)" );
+  $dbh->do( "$insdest ('mars','the red one','direction galaxy',8,16,999,2)" );
+  $dbh->do( "$insdest ('neptun','only a small dest','nearby sun',3,76,2121,3)" );
+  $dbh->do( "$insdest ('sun','bright and big','the center',7,55,9,0)" );
 
   $dbh->do( "$inswh ('kr3345',123456700,42,true,'2003-03-04','moon')" );
   $dbh->do( "$inswh ('kr7000',123456702,42,true,'2003-03-03','moon')" );

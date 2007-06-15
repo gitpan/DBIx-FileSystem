@@ -6,7 +6,7 @@ File README for DBIx::FileSystem
 
 DBIx::FileSystem - Manage database tables like a filesystem
 
-   2003  by Alexander Haderer
+   (C) 2003, 2007  by Alexander Haderer
 
    You may distribute under the terms of the GNU General Public License.
 
@@ -146,6 +146,18 @@ CHANGES:
 	- delcp now is called 'uniq', print out warning msg when delcp used
 	- added 'vgrep' command
 
+1.10	skipped
+
+1.1	skipped
+
+1.2	10 jun 2007
+	- extended int datatype to behave like a collection of configurable
+	  flags (bits) if option 'flags' is set
+	- added new types 'cidr' and 'inet' (will work with PostgreSql only)
+	- added flags example to pawactl
+	- added cidr example to pawactl
+	- minor bug fixes in application and docs
+
 COPYRIGHT:
 ----------
 
@@ -171,6 +183,7 @@ REQUIREMENTS:
   - build, test and install Perl 5         (at least 5.003)
   - build, test and install the DBI module (at least 1.00)
   - build, test and install Gnu::ReadLine  (recommended)
+  - to use datatypes 'cidr' and 'inet': a PostgreSql database
 
 
 PLATFORMS:
@@ -201,9 +214,9 @@ Workaround: Do a test of all required modules. Run the sample program pawactl.
 CVS INFO:
 --------
 Last Update:		$Author: marvin $
-Update Date:		$Date: 2004/05/28 14:32:44 $
+Update Date:		$Date: 2007/06/15 13:58:56 $
 Source File:		$Source: /home/cvsroot/tools/FileSystem/README,v $
-CVS/RCS Revision:	$Revision: 1.11 $
+CVS/RCS Revision:	$Revision: 1.13 $
 Status:			$State: Exp $
 
 
