@@ -22,13 +22,17 @@
 # Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 # Last Update:		$Author: marvin $
-# Update Date:		$Date: 2007/06/15 13:27:40 $
+# Update Date:		$Date: 2007/08/09 15:13:23 $
 # Source File:		$Source: /home/cvsroot/tools/FileSystem/FileSystem.pm,v $
-# CVS/RCS Revision:	$Revision: 1.14 $
+# CVS/RCS Revision:	$Revision: 1.15 $
 # Status:		$State: Exp $
 # 
 # CVS/RCS Log:
 # $Log: FileSystem.pm,v $
+# Revision 1.15  2007/08/09 15:13:23  marvin
+# - bugfix: display of defaultvalues from defaultfile wrong (cat/vi)
+# - pawactl: setup some more usefull sample values
+#
 # Revision 1.14  2007/06/15 13:27:40  marvin
 # - added bitfield/flags type as an extension of type 'int' (option flags =>)
 # - added Postgres speicific types cidr and inet
@@ -84,7 +88,7 @@ use strict;
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
 use Exporter;
 
-$DBIx::FileSystem::VERSION = '1.2';
+$DBIx::FileSystem::VERSION = '1.3';
 
 @ISA = qw( Exporter );
 @EXPORT_OK = qw(
@@ -1206,7 +1210,7 @@ sub print_file() {
     @defaults = $st->fetchrow_array();
   }
   $st->finish();
-  
+
   # print it
   my $em = "*unset*";
 
@@ -1267,7 +1271,12 @@ sub print_file() {
 	}
 	print $FH "#\n";
 	if( @defaults ) {
-	  my $def = build_flags( $defaults[$i], $flags[$i] );
+	  my $def;
+	  if( defined $defaults[$i] and defined $flags[$i] ) {
+	    $def = build_flags( $defaults[$i], $flags[$i] );
+	  }elsif( defined $defaults[$i] ) {
+	    $def = $defaults[$i];
+	  }
 	  print $FH  "# default: ";
 	  print $FH  defined $def ? "$def\n#\n" : "$em\n#\n";
 	}
@@ -1349,7 +1358,7 @@ sub var_value_v() {
 	    $s .= sprintf( "#  %${maxlen}s  %s\n", ' ', $dscline );
 	  }
 	}
-	if( $value & (1<<$i) ) {
+	if( defined $value and ($value & (1<<$i) ) ) {
 	  $on .= "$hash    $flags->{$i}[0]\n";
 	}else{
 	  $off .= "$hash    $flags->{$i}[0]\n";

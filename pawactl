@@ -5,9 +5,9 @@
 # pawactl   : packet warehouse control program
 #
 # Last Update:		$Author: marvin $
-# Update Date:		$Date: 2007/06/15 13:27:40 $
+# Update Date:		$Date: 2007/08/09 15:13:24 $
 # Source File:		$Source: /home/cvsroot/tools/FileSystem/pawactl,v $
-# CVS/RCS Revision:	$Revision: 1.9 $
+# CVS/RCS Revision:	$Revision: 1.10 $
 # Status:		$State: Exp $
 # 
 # Imagine a warehouse for packet distribution: Some well known senders are
@@ -85,6 +85,10 @@
 #
 # CVS/RCS Log:
 # $Log: pawactl,v $
+# Revision 1.10  2007/08/09 15:13:24  marvin
+# - bugfix: display of defaultvalues from defaultfile wrong (cat/vi)
+# - pawactl: setup some more usefull sample values
+#
 # Revision 1.9  2007/06/15 13:27:40  marvin
 # - added bitfield/flags type as an extension of type 'int' (option flags =>)
 # - added Postgres speicific types cidr and inet
@@ -168,11 +172,18 @@ my %vdirs =
        srcid => 				# columnname in DB
        { type	=> 'char',
 	 len 	=> 4,
-	 colopt=> 'UNIQUE',			# optional, but useful here
+	 colopt=> 'UNIQUE',                     # optional, but useful here
 	 var	=> 'SourceID',
 	 desc	=> "Internal source idenficator (4 characters)",
 	 uniq 	=> 1,				# optional: 1: uniq and delete
 	 					#   when copy with cp
+	 pos	=> $pos++,
+       },
+       code => 					# columnname in DB
+       { type	=> 'char',
+	 len 	=> 1,
+	 var	=> 'Code',
+	 desc	=> "Management status code (1 character)",
 	 pos	=> $pos++,
        },
        dist => 					# columnname in DB
@@ -505,29 +516,40 @@ use DBI;
 sub fill_with_dummies {
   my $dbh;
   my $r;
-  my $inssource = "insert into source (fname,srcid,dist,sendto,prop) values";
-  my $insdest = "insert into dest (fname,comment,addr,delay1,delay2,mps,opt) values";
+  my $inssource = "insert into source (fname,srcid,code,dist,sendto,prop) values";
+  my $insdest = "insert into dest (fname,comment,addr,delay1,delay2,opt,mps) values";
   my $inswh = "insert into warehouse (fname,itim,dummy,flag,lcheck,dest) values";
+  if( $DBHOST =~ /^dbi:Pg/ ) {
+    $insdest = "insert into dest (fname,comment,addr,delay1,delay2,opt,mps,remnet) values";
+  }
 
   ($dbh = DBI->connect( $DBHOST, $DBUSER, $DBPWD,
      {ChopBlanks => 1, AutoCommit => 1, PrintError => 0})) 
      || die "$PRG: connect to '$DBHOST' failed:\n", $DBI::errstr;
 
   # set 'generic' default values
-  $r=$dbh->do( "update source set srcid='----',dist=-1");
+  $r=$dbh->do( "update source set srcid='---',code='D',dist=1000,prop=80");
 
-  $dbh->do( "$inssource ('factory1','BBF1',224,'moon',0)" );
-  $dbh->do( "$inssource ('factory2','BBF2',576,'venus',16)" );
-  $dbh->do( "$inssource ('acity','CIA',54565,'mars',48)" );
-  $dbh->do( "$inssource ('bcity','CIB',2434,'moon',112)" );
-  $dbh->do( "$inssource ('kcity','CIK',4455,'moon',240)" );
-  $dbh->do( "$inssource ('fromfar',NULL,1000000,'mars',128)" );
+  $dbh->do( "$inssource ('acity',    'CIB', NULL, 1000,   'mars',   48   )" );
+  $dbh->do( "$inssource ('bcity',    'CKM', NULL, 2000,   'moon',   112  )" );
+  $dbh->do( "$inssource ('factory1', 'EFK', 'E',  NULL,   'moon',   0    )" );
+  $dbh->do( "$inssource ('factory2', 'RPC', 'D',  3000,   'venus',  16   )" );
+  $dbh->do( "$inssource ('fromfar',  'TFK', NULL, NULL,   'mars',   NULL )" );
+  $dbh->do( "$inssource ('kcity',    'ABC', 'E',  4455,   NULL,     0    )" );
 
-  $dbh->do( "$insdest ('moon','not a planet','nearby',77,80,88,0)" );
-  $dbh->do( "$insdest ('venus','a female planet','direction sun',12,33,67,1)" );
-  $dbh->do( "$insdest ('mars','the red one','direction galaxy',8,16,999,2)" );
-  $dbh->do( "$insdest ('neptun','only a small dest','nearby sun',3,76,2121,3)" );
-  $dbh->do( "$insdest ('sun','bright and big','the center',7,55,9,0)" );
+  if( $DBHOST =~ /^dbi:Pg/ ) {
+    $dbh->do( "$insdest ('moon','not a planet','nearby',77,80,0,88,'10.20.30.0/24')" );
+    $dbh->do( "$insdest ('venus','a female planet','direction sun',33,12,1,67,'10.20.40.0/24')" );
+    $dbh->do( "$insdest ('mars','the red one','direction galaxy',33,16,2,999,'10.20.40/24')" );
+    $dbh->do( "$insdest ('neptun','only a small dest','nearby sun',3,76,3,2121,'10.20.60/24')" );
+    $dbh->do( "$insdest ('sun','bright and big','the center',7,55,0,9,NULL)" );
+  }else{
+    $dbh->do( "$insdest ('moon','not a planet','nearby',77,80,0,88)" );
+    $dbh->do( "$insdest ('venus','a female planet','direction sun',12,33,1,67)" );
+    $dbh->do( "$insdest ('mars','the red one','direction galaxy',8,16,2,999)" );
+    $dbh->do( "$insdest ('neptun','only a small dest','nearby sun',3,76,3,2121)" );
+    $dbh->do( "$insdest ('sun','bright and big','the center',7,55,0,9)" );
+  }
 
   $dbh->do( "$inswh ('kr3345',123456700,42,true,'2003-03-04','moon')" );
   $dbh->do( "$inswh ('kr7000',123456702,42,true,'2003-03-03','moon')" );
