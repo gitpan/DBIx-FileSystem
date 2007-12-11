@@ -25,6 +25,10 @@ completion. FileSystem sees the database as a filesystem: each
 table is a different directory with the tablename as the directory
 name and each row in a table is a file within that directory. 
 
+DBIx::FileSystem also contains a class to access the data in the
+Database. The function get_conf_by_var() respects the defaultfile
+function from the shell.
+
 The motivation for FileSystem was the need for a terminal based
 configuration interface to manipulate database entries which are used
 as configuration data for a server process. FileSystem is neither
@@ -32,12 +36,12 @@ complete nor a replacement for dbish or other full-feature SQL shells
 or editors. Think of FileSystem as a replacement for a Web/CGI based
 graphical user interface for manipulating database contents.
 
-
 EXAMPLE:
 --------
 
-The file pawactl shows the usage of DBIx::FileSystem. It implements 
-the configure shell of a virtual package warehouse. Sample session:
+The file pawactl implements a sample shell using DBIx::FileSystem. It 
+implements the configure shell of a virtual package warehouse. 
+Sample session:
 
 ----------> pawactl sample session start --------->
 
@@ -96,6 +100,92 @@ the configure shell of a virtual package warehouse. Sample session:
   pawactl (/dest): 
 
 <---------- pawactl sample session end <---------
+
+REQUIREMENTS:
+-------------
+
+  - build, test and install Perl 5         (at least 5.003)
+  - build, test and install the DBI module (at least 1.00)
+  - build, test and install Gnu::ReadLine  (recommended)
+  - to use datatypes 'cidr' and 'inet': a PostgreSql database
+  - a database server running
+  - a perl DBD module installed to connect to the database server
+
+
+PLATFORMS:
+----------
+
+  This release of DBIx::FileSystem has been developed using FreeBSD.
+
+
+INSTALLATION:
+-------------
+
+1.   perl Makefile.PL
+2.   make
+3.   make test
+4.   make install
+
+( 1. to 3. as normal user, not as root ! )
+
+
+TESTING:
+--------
+
+- the shell: t/00_shell.t:
+
+  The test currently is only a dummy because I don't know how to test
+  an interactive shell across many different platforms and terminals.
+  Workaround: Do a test of all required modules. Run the sample pawactl.
+
+
+- access class: t/02_access_data.t
+
+  This test requires a running database server containing the sample database 
+  coming with the sample program pawactl. To prepare the tests for the
+  access class do:
+
+  1. create the database on the server using SQL or commandline:
+  	CREATEDB warehouse
+  2. modify example 'pawactl' to connect to this database. Edit the lines
+     where these variables are set:
+        $DBCONN
+	$DBUSER
+	$DBPWD
+  3. run example 'perl -Iblib/lib examples/pawactl recreatedb' to install 
+     the sample data in db
+  4. modify the test t/02_access_data.t to connect to the sample database.
+     Edit the lines where the following variables are set, so that they have
+     the same values as in pawactl:
+        $DBCONN
+	$DBUSER
+	$DBPWD
+  5. do not change the sample database by playing around with pawactl!
+  6. now you can test:
+  	either: 'make test'
+	or manually: 'perl -Iblib/lib t/02_access_data.t'
+
+
+  
+USING EXAMPLES:
+---------------
+
+To play around with the example warehouse you need a sample database:
+
+  1. create the database on the server using SQL or commandline:
+  	createdb warehouse
+  2. modify example 'pawactl' to connect to this database. Edit the lines
+     where these variables are set:
+        $DBCONN
+	$DBUSER
+	$DBPWD
+  3. run example 'perl -Iblib/lib examples/pawactl recreatedb' to install 
+     the sample data in db
+  4. play around with the example shell: 'perl -Iblib/lib examples/pawactl'
+     NOTE: take a look at the comments in pawactl
+  5. play around with the access sample: 'perl -Iblib/lib examples/access'
+
+
 
 CHANGES:
 --------
@@ -162,6 +252,15 @@ CHANGES:
 	- bugfix: display of defaultvalues from defaultfile wrong (cat/vi)
 	- pawactl: setup some more usefull sample values
 
+1.4	11 nov 2007
+	- extended int datatype to behave like a enum integer type if option
+	  'enums' is set
+	- added enums example to pawactl
+
+1.5	4 dec 2007
+	- added access class for database values, the access function 
+	  respects the defaultfile function
+
 COPYRIGHT:
 ----------
 
@@ -181,46 +280,14 @@ IF YOU HAVE PROBLEMS:
 Please send comments and bug-reports to <afrika@cpan.org>
 
 
-REQUIREMENTS:
--------------
-
-  - build, test and install Perl 5         (at least 5.003)
-  - build, test and install the DBI module (at least 1.00)
-  - build, test and install Gnu::ReadLine  (recommended)
-  - to use datatypes 'cidr' and 'inet': a PostgreSql database
-
-
-PLATFORMS:
-----------
-
-  This release of DBIx::FileSystem has been developed using FreeBSD.
-
-
-INSTALLATION:
--------------
-
-1.   perl Makefile.PL
-2.   make
-3.   make test
-4.   make install
-
-( 1. to 3. as normal user, not as root ! )
-
-
-TESTING:
---------
-
-The test currently is only a dummy because I don't know how to test
-an interactive shell across many different platforms and terminals.
-Workaround: Do a test of all required modules. Run the sample program pawactl.
-
+  
 
 CVS INFO:
 --------
 Last Update:		$Author: marvin $
-Update Date:		$Date: 2007/08/09 15:13:24 $
+Update Date:		$Date: 2007/12/10 17:15:46 $
 Source File:		$Source: /home/cvsroot/tools/FileSystem/README,v $
-CVS/RCS Revision:	$Revision: 1.14 $
+CVS/RCS Revision:	$Revision: 1.17 $
 Status:			$State: Exp $
 
 

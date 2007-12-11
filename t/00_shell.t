@@ -1,9 +1,9 @@
 #
 # file: t/use.t
 #
-# Last Update:		$Author: afrika $
-# Update Date:		$Date: 2003/05/09 18:10:03 $
-# Source File:		$Source: /home/cvsroot/tools/FileSystem/t/use.t,v $
+# Last Update:		$Author: marvin $
+# Update Date:		$Date: 2007/11/27 16:51:44 $
+# Source File:		$Source: /home/cvsroot/tools/FileSystem/t/00_shell.t,v $
 # CVS/RCS Revision:	$Revision: 1.1 $
 # Status:		$State: Exp $
 # 
@@ -16,5 +16,5 @@ BEGIN { plan tests => 1 }
 # load your module...
 use DBIx::FileSystem;
 
-# currently no usefull test available for an interactive shell
+print "# currently no usefull test available for an interactive shell\n";
 ok(1); # success

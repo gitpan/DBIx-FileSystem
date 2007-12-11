@@ -5,9 +5,9 @@
 # pawactl   : packet warehouse control program
 #
 # Last Update:		$Author: marvin $
-# Update Date:		$Date: 2007/08/09 15:13:24 $
-# Source File:		$Source: /home/cvsroot/tools/FileSystem/pawactl,v $
-# CVS/RCS Revision:	$Revision: 1.10 $
+# Update Date:		$Date: 2007/12/07 17:15:21 $
+# Source File:		$Source: /home/cvsroot/tools/FileSystem/examples/pawactl,v $
+# CVS/RCS Revision:	$Revision: 1.2 $
 # Status:		$State: Exp $
 # 
 # Imagine a warehouse for packet distribution: Some well known senders are
@@ -64,6 +64,7 @@
 #     - variable 'Properties' is a bitfield using flags
 #     - variable 'Destination' is a reference to directory dest. Only one 
 #         valid filename or an empty value can be entered here.
+#     - Spped uses enum to choose between different speeds
 #  - directory 'warehouse':
 #     - this directory is write protected
 #     - you can still look into files with sum and cat
@@ -74,17 +75,28 @@
 # NOTE: to start pawactl without installation of DBIx::Filesystem do:
 #     		perl Makefile.PL
 #		make
-#		perl -Iblib/lib pawactl
+#		perl -Iblib/lib examples/pawactl
 #
 #	first you need to setup the database with examples:
 #
-#		perl -Iblib/lib pawactl recreatedb
+#		perl -Iblib/lib examples/pawactl recreatedb
 #
 # License:
 #   You may distribute under the terms of the GNU General Public License.
 #
 # CVS/RCS Log:
 # $Log: pawactl,v $
+# Revision 1.2  2007/12/07 17:15:21  marvin
+# - finalized enum, access class and examples
+#
+# Revision 1.1  2007/12/04 18:27:26  marvin
+# - new directory examples
+# - bug fixes: handling quotes in SQL
+# - addes access class
+#
+# Revision 1.11  2007/11/15 17:19:09  marvin
+# - added int option 'enums' to FileSystem module and pawactl example
+#
 # Revision 1.10  2007/08/09 15:13:24  marvin
 # - bugfix: display of defaultvalues from defaultfile wrong (cat/vi)
 # - pawactl: setup some more usefull sample values
@@ -130,7 +142,7 @@ use DBIx::FileSystem qw( mainloop recreatedb );
 my $VERSION = "0002";	# our version string
 
 # DBI connect string    EDIT THIS! The database must exist!
-my $DBHOST = "dbi:Pg:dbname=warehouse;host=vinmari";
+my $DBCONN = "dbi:Pg:dbname=warehouse;host=vinmari";
 
 # DBI user
 my $DBUSER = "marvin";
@@ -212,6 +224,20 @@ my %vdirs =
 	 var	=> 'Destination',
 	 desc	=> "The destination where all packets will be send to",
 	 pos	=> $pos++,
+       },
+       speed => 				# columnname in DB
+       { type	=> 'int',			# int should be used for flags
+	 var	=> 'Speed',
+	 desc	=> "The special speed for delivery from this source.\n".
+	           "Only one value can be choosen, if unsure leave empty",
+	 	 # enumval     enumname      enumdescription
+	 enums  => {   1 => [ "VerySlow", "slow like a worm" ],
+		     123 => [ "Slow",     "just as fast as an ant" ],
+		     456 => [ "Medium",   "the usual speed, known to work well\n".
+			    		  "with most destinations. recommended" ],
+		     789 => [ "Fast",     "only for the strong ones" ],
+		   },
+	 pos	=> $pos++,			
        },
      }, 
    },
@@ -349,7 +375,7 @@ my %vdirs =
 
 # when using PostgreSql add a column with type 'cidr' to directory 'dest' to 
 # the end (pos = 100)
-if( $DBHOST =~ /^dbi:Pg/ ) {
+if( $DBCONN =~ /^dbi:Pg/ ) {
   $vdirs{'dest'}{cols}{'remnet'} = { 
       type	=> 'cidr',
       var	=> 'RemoteNet',
@@ -376,10 +402,10 @@ my %cmds =
 
 # check if we wan't to recreate the dbtables
 if( $#ARGV==0 and $ARGV[0] eq 'recreatedb' ) {
-  recreatedb( %vdirs, $PROGNAME, $VERSION, $DBHOST, $DBUSER, $DBPWD );
+  recreatedb( %vdirs, $PROGNAME, $VERSION, $DBCONN, $DBUSER, $DBPWD );
   fill_with_dummies();
 }else{
-  mainloop( %vdirs, $PROGNAME, $VERSION, $DBHOST, $DBUSER, $DBPWD, %cmds );
+  mainloop( %vdirs, $PROGNAME, $VERSION, $DBCONN, $DBUSER, $DBPWD, %cmds );
 }
 
 ###############################################################
@@ -516,33 +542,33 @@ use DBI;
 sub fill_with_dummies {
   my $dbh;
   my $r;
-  my $inssource = "insert into source (fname,srcid,code,dist,sendto,prop) values";
+  my $inssource = "insert into source (fname,srcid,code,dist,sendto,prop,speed) values";
   my $insdest = "insert into dest (fname,comment,addr,delay1,delay2,opt,mps) values";
   my $inswh = "insert into warehouse (fname,itim,dummy,flag,lcheck,dest) values";
-  if( $DBHOST =~ /^dbi:Pg/ ) {
+  if( $DBCONN =~ /^dbi:Pg/ ) {
     $insdest = "insert into dest (fname,comment,addr,delay1,delay2,opt,mps,remnet) values";
   }
 
-  ($dbh = DBI->connect( $DBHOST, $DBUSER, $DBPWD,
+  ($dbh = DBI->connect( $DBCONN, $DBUSER, $DBPWD,
      {ChopBlanks => 1, AutoCommit => 1, PrintError => 0})) 
-     || die "$PRG: connect to '$DBHOST' failed:\n", $DBI::errstr;
+     || die "$PRG: connect to '$DBCONN' failed:\n", $DBI::errstr;
 
   # set 'generic' default values
-  $r=$dbh->do( "update source set srcid='---',code='D',dist=1000,prop=80");
+  $r=$dbh->do( "update source set srcid='---',code='D',dist=1000,prop=80,speed=456");
 
-  $dbh->do( "$inssource ('acity',    'CIB', NULL, 1000,   'mars',   48   )" );
-  $dbh->do( "$inssource ('bcity',    'CKM', NULL, 2000,   'moon',   112  )" );
-  $dbh->do( "$inssource ('factory1', 'EFK', 'E',  NULL,   'moon',   0    )" );
-  $dbh->do( "$inssource ('factory2', 'RPC', 'D',  3000,   'venus',  16   )" );
-  $dbh->do( "$inssource ('fromfar',  'TFK', NULL, NULL,   'mars',   NULL )" );
-  $dbh->do( "$inssource ('kcity',    'ABC', 'E',  4455,   NULL,     0    )" );
+  $dbh->do( "$inssource ('acity',    'CIB', NULL, 1000,   'mars',   48  , 1 )" );
+  $dbh->do( "$inssource ('bcity',    'CKM', NULL, 2000,   'moon',   112 , 123 )" );
+  $dbh->do( "$inssource ('factory1', 'EFK', 'E',  NULL,   'moon',   0   , 456 )" );
+  $dbh->do( "$inssource ('factory2', 'RPC', 'D',  3000,   'venus',  16  , 789 )" );
+  $dbh->do( "$inssource ('fromfar',  'TFK', NULL, NULL,   'mars',   NULL, NULL )" );
+  $dbh->do( "$inssource ('kcity',    'ABC', 'E',  4455,   NULL,     0   , 22 )" );
 
-  if( $DBHOST =~ /^dbi:Pg/ ) {
+  if( $DBCONN =~ /^dbi:Pg/ ) {
     $dbh->do( "$insdest ('moon','not a planet','nearby',77,80,0,88,'10.20.30.0/24')" );
     $dbh->do( "$insdest ('venus','a female planet','direction sun',33,12,1,67,'10.20.40.0/24')" );
     $dbh->do( "$insdest ('mars','the red one','direction galaxy',33,16,2,999,'10.20.40/24')" );
     $dbh->do( "$insdest ('neptun','only a small dest','nearby sun',3,76,3,2121,'10.20.60/24')" );
-    $dbh->do( "$insdest ('sun','bright and big','the center',7,55,0,9,NULL)" );
+    $dbh->do( "$insdest ('sun','bright and big and with a quote '' here','the center',7,55,0,9,NULL)" );
   }else{
     $dbh->do( "$insdest ('moon','not a planet','nearby',77,80,0,88)" );
     $dbh->do( "$insdest ('venus','a female planet','direction sun',12,33,1,67)" );

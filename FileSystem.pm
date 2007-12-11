@@ -22,13 +22,31 @@
 # Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 # Last Update:		$Author: marvin $
-# Update Date:		$Date: 2007/08/09 15:13:23 $
+# Update Date:		$Date: 2007/12/10 17:15:46 $
 # Source File:		$Source: /home/cvsroot/tools/FileSystem/FileSystem.pm,v $
-# CVS/RCS Revision:	$Revision: 1.15 $
+# CVS/RCS Revision:	$Revision: 1.20 $
 # Status:		$State: Exp $
 # 
 # CVS/RCS Log:
 # $Log: FileSystem.pm,v $
+# Revision 1.20  2007/12/10 17:15:46  marvin
+# - fixed docs
+#
+# Revision 1.19  2007/12/07 17:15:19  marvin
+# - finalized enum, access class and examples
+#
+# Revision 1.18  2007/12/04 18:27:22  marvin
+# - new directory examples
+# - bug fixes: handling quotes in SQL
+# - addes access class
+#
+# Revision 1.17  2007/11/27 16:51:34  marvin
+# - added new int type 'enum'
+# - beginning to add config access class and its testing
+#
+# Revision 1.16  2007/11/15 17:19:09  marvin
+# - added int option 'enums' to FileSystem module and pawactl example
+#
 # Revision 1.15  2007/08/09 15:13:23  marvin
 # - bugfix: display of defaultvalues from defaultfile wrong (cat/vi)
 # - pawactl: setup some more usefull sample values
@@ -85,23 +103,45 @@
 package DBIx::FileSystem;
 
 use strict;
-use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
+use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS );
 use Exporter;
 
-$DBIx::FileSystem::VERSION = '1.3';
+use constant {
+  # for access class: return results
+  OK     => 0,	# everything ok
+  NOFILE => 1,	# file not found in db
+  NFOUND => 2,	# more than one entry found
+  ERROR  => 3	# nothing found, errorstring set
+};
+
+$DBIx::FileSystem::VERSION = '1.5';
 
 @ISA = qw( Exporter );
+@EXPORT = qw( );
 @EXPORT_OK = qw(
 	     &recreatedb
 	     &mainloop
+	      OK
+	      NOFILE
+	      NFOUND
+	      ERROR
 	     );
+%EXPORT_TAGS = ( symbols => [ qw( OK NOFILE NFOUND ERROR ) ] );
 
 use vars qw( $OUT $vwd $dbh );
 
 use DBI;
 use Term::ReadLine;
 use POSIX qw{tmpnam};
+
 use Fcntl;
+
+########################################################################
+########################################################################
+## classical interface: the shell
+########################################################################
+########################################################################
+
 
 
 ########################################################################
@@ -157,7 +197,7 @@ $EDITOR = "/usr/bin/vi" unless $EDITOR;
 #  vdirs:	reference to vdir hash
 #  PRG:		program name for the shell-program
 #  VERSION	four digit version string for program/database version
-#  DBHOST	DBI connect string for the database
+#  DBCONN	DBI connect string for the database
 #  DBUSER       database user
 #
 # returns nothing
@@ -170,7 +210,7 @@ my $vdirs;	# reference to vdir hash
 my $term;
 # $OUT;		# the stdout (exported)
 
-my $DBHOST;	# DBI database connect string
+my $DBCONN;	# DBI database connect string
 my $DBUSER;	# DBI database user
 my $DBPWD;	# DBI password
 my $VERSION;
@@ -181,7 +221,7 @@ my $PRG;	# program name of the shell
 sub mainloop(\%$$$$$\%) {
 
   my $customcmds;
-  ($vdirs,$PRG,$VERSION,$DBHOST,$DBUSER,$DBPWD,$customcmds) = @_;
+  ($vdirs,$PRG,$VERSION,$DBCONN,$DBUSER,$DBPWD,$customcmds) = @_;
 
   # merge custom commands, if any
   if( defined $customcmds ) {
@@ -200,9 +240,9 @@ sub mainloop(\%$$$$$\%) {
   }
 
   # connect to db
-  ($dbh = DBI->connect( $DBHOST, $DBUSER, $DBPWD,
+  ($dbh = DBI->connect( $DBCONN, $DBUSER, $DBPWD,
      {ChopBlanks => 1, AutoCommit => 1, PrintError => 0})) 
-     || die "$PRG: connect to '$DBHOST' failed:\n", $DBI::errstr;
+     || die "$PRG: connect to '$DBCONN' failed:\n", $DBI::errstr;
 
   # check vdirs
   if( check_vdirs_struct() ) {
@@ -252,12 +292,12 @@ sub mainloop(\%$$$$$\%) {
 
 sub recreatedb(\%$$$$$) {
 
-  ($vdirs,$PRG,$VERSION,$DBHOST,$DBUSER,$DBPWD) = @_;
+  ($vdirs,$PRG,$VERSION,$DBCONN,$DBUSER,$DBPWD) = @_;
 
   # connect to db
-  ($dbh = DBI->connect( $DBHOST, $DBUSER, $DBPWD,
+  ($dbh = DBI->connect( $DBCONN, $DBUSER, $DBPWD,
      {ChopBlanks => 1, AutoCommit => 1, PrintError => 0})) 
-     || die "$PRG: connect to '$DBHOST' failed:\n", $DBI::errstr;
+     || die "$PRG: connect to '$DBCONN' failed:\n", $DBI::errstr;
 
   # check vdirs
   if( check_vdirs_struct() ) {
@@ -318,11 +358,11 @@ sub com_ls() {
     my $col = $vdirs->{$vwd}{fnamcol};
     $st = $dbh->prepare("select $col from $vwd order by $col");
     unless( $st ) {
-      print $OUT "$PRG: can't prepare ls query '$vwd':\n  $DBI::errstr\n";
+      print $OUT "$PRG: can't prepare ls query '$vwd':\n  " . $dbh->errstr;
       return 0;
     }
     unless( $st->execute() ) {
-      print $OUT "$PRG: can't exec ls query '$vwd':\n  $DBI::errstr\n";
+      print $OUT "$PRG: can't exec ls query '$vwd':\n  " . $dbh->errstr;
       return 0;
     }
     while( $i = $st->fetchrow_array() ) {
@@ -401,11 +441,11 @@ sub com_ll() {
     my $st;
     $st = $dbh->prepare("select $col, $comcol from $vwd order by $col");
     unless( $st ) {
-      print $OUT "$PRG: can't prepare ll query '$vwd':\n  $DBI::errstr\n";
+      print $OUT "$PRG: can't prepare ll query '$vwd':\n  " . $dbh->errstr;
       return 0;
     }
     unless( $st->execute() ) {
-      print $OUT "$PRG: can't exec ll query '$vwd':\n  $DBI::errstr\n";
+      print $OUT "$PRG: can't exec ll query '$vwd':\n  " . $dbh->errstr;
       return 0;
     }
     while( ($i,$c) = $st->fetchrow_array() ) {
@@ -419,11 +459,11 @@ sub com_ll() {
     my $col = $vdirs->{$vwd}{fnamcol};
     $st = $dbh->prepare("select $col from $vwd order by $col");
     unless( $st ) {
-      print $OUT "$PRG: can't prepare ls query '$vwd':\n  $DBI::errstr\n";
+      print $OUT "$PRG: can't prepare ls query '$vwd':\n  " . $dbh->errstr;
       return 0;
     }
     unless( $st->execute() ) {
-      print $OUT "$PRG: can't exec ls query '$vwd':\n  $DBI::errstr\n";
+      print $OUT "$PRG: can't exec ls query '$vwd':\n  " . $dbh->errstr;
       return 0;
     }
     while( $i = $st->fetchrow_array() ) {
@@ -502,7 +542,7 @@ sub com_rm() {
 	    my $fnc = $vdirs->{$vwd}{fnamcol};
 	    $r = $dbh->do( "delete from $vwd where $fnc='$arg'");
 	    if( !defined $r ) { 
-	      print $OUT "rm: database error:\n$DBI::errstr\n";
+	      print $OUT "rm: database error:\n" . $dbh->errstr;
 	    }elsif( $r==0 ) { 
 	      print $OUT "rm: no such file '$arg'\n";
 	    }
@@ -630,11 +670,11 @@ sub com_vi() {
 	      next if $inp eq 'y';
 	      last if $inp eq 'n';
 	    }
-#	    print $OUT ">>>$sql<<<\n";	#########
+	    ### print $OUT ">>>$sql<<<\n";	######### hierhierhier
 	    if( length($sql) and $tmpf_mtime != (stat $tmpf)[9] ) {
 	      my $res = $dbh->do( $sql );
 	      if( !defined $res ) {
-		my $inp=want_to_edit_again( "save to database:\n$DBI::errstr");
+		my $inp=want_to_edit_again( "save to database:\n".$dbh->errstr);
 		if($inp eq 'y') { $ln = 1; next; }
 	      }elsif( $res == 0 ) {
 		print $OUT "\n\n\n\n\nvi: nothing saved\n";
@@ -649,7 +689,7 @@ sub com_vi() {
 	}
 	unlink( $tmpf );
       }else{
-	print $OUT "vi: error: illegal or to long filename '$arg'\n";
+	print $OUT "vi: error: illegal or too long filename '$arg'\n";
       }
     }else{
       print $OUT "vi: error: read only directory '/$vwd'\n";
@@ -821,11 +861,11 @@ sub dbshell_completion {
       my $col = $vdirs->{$vwd}{fnamcol};
       $st = $dbh->prepare("select $col from $vwd order by $col");
       unless( $st ) {
-	print $OUT "$PRG: prep completion query '$vwd':\n  $DBI::errstr\n";
+	print $OUT "$PRG: prep completion query '$vwd':\n  " . $dbh->errstr;
 	return undef;
       }
       unless( $st->execute() ) {
-	print $OUT "$PRG: exec completion query '$vwd':\n  $DBI::errstr\n";
+	print $OUT "$PRG: exec completion query '$vwd':\n  " . $dbh->errstr;
 	return undef;
       }
       my $i;
@@ -978,6 +1018,40 @@ sub check_vdirs_struct() {
 	}
       }
 
+      # check for enums
+      if( exists $cols->{$col}{enums} ) {
+	if(  $cols->{$col}{type} ne 'int' ) {
+	  print "$pre dir '$dir', column '$col', when using 'enums' type must be 'int'\n";
+	  return 1;
+	}
+	unless( ref( $cols->{$col}{enums} ) eq "HASH" ) {
+	  print "$pre dir '$dir', column '$col', 'enums' must be a hash\n";
+	  return -1;
+	}
+	foreach my $i (sort keys(%{$cols->{$col}{enums} }) ) {
+	  if( $i =~ /\D/ ) {
+	    print "$pre dir '$dir', column '$col', enums: enumvalue must be an int\n";
+	    return 1;
+	  }
+	  unless( ref( $cols->{$col}{enums}{$i} ) eq "ARRAY" ) {
+	    print "$pre dir '$dir', column '$col', enumvalue '$i': missing array with enumname + enumdescritpion\n";
+	    return -1;
+	  }
+	  unless( defined $cols->{$col}{enums}{$i}->[0] ) {
+	    print "$pre dir '$dir', column '$col', enumvalue '$i': missing enumname\n";
+	    return -1;
+	  }
+	  if( $cols->{$col}{enums}{$i}->[0] =~ / / ) {
+	    print "$pre dir '$dir', column '$col', enumvalue '$i': enumname must be a single word\n";
+	    return -1;
+	  }
+	  unless( defined $cols->{$col}{enums}{$i}->[1] ) {
+	    print "$pre dir '$dir', column '$col', enumvalue '$i': missing enumdescription\n";
+	    return -1;
+	  }
+	}
+      }
+
       # setup refby
       if( defined $cols->{$col}{ref} ) {
 	push @{$vdirs->{$cols->{$col}{ref}}{refby}{$dir} }, $col;
@@ -1030,11 +1104,11 @@ sub check_db_tables() {
   # check version no of db tables
   $st = $dbh->prepare("select value from tablestatus where tag='version' ");
   unless( $st ) {
-    print "$PRG: can't prepare query 'version':\n  $DBI::errstr\n";
+    print "$PRG: can't prepare query 'version':\n  " . $dbh->errstr;
     return 1;
   }
   unless( $st->execute() ) {
-    print "$PRG: can't execute query 'version':\n  $DBI::errstr\n";
+    print "$PRG: can't execute query 'version':\n  " . $dbh->errstr;
     return 1;
   }
   
@@ -1055,11 +1129,11 @@ sub check_db_tables() {
   foreach my $i (sort keys(%{$vdirs}) ) {
     $st = $dbh->prepare("select * from $i limit 1");
     unless( $st ) {
-      print "$PRG: can't prepare query '$i':\n  $DBI::errstr\n";
+      print "$PRG: can't prepare query '$i':\n  " . $dbh->errstr;
       return 1;
     }
     unless( $st->execute() ) {
-      print "$PRG: can't execute query '$i':\n  $DBI::errstr\n";
+      print "$PRG: can't execute query '$i':\n  " . $dbh->errstr;
       return 1;
     }
     my @dummy = $st->fetchrow_array();
@@ -1080,13 +1154,13 @@ sub recreate_db_tables() {
      qq{ create table tablestatus ("tag" char(16), 
 				   "value" char(16) PRIMARY KEY) } );
   unless( $r ) {
-    print "$PRG: create table tablestatus:\n  $DBI::errstr\n";
+    print "$PRG: create table tablestatus:\n  " . $dbh->errstr;
     return;
   }
   $r = $dbh->do( 
      qq{ insert into tablestatus (tag, value) values ('version','$VERSION' )});
   unless( $r ) {
-    print "$PRG: insert version into tablestatus:\n  $DBI::errstr\n";
+    print "$PRG: insert version into tablestatus:\n  " . $dbh->errstr;
     return;
   }
 
@@ -1118,7 +1192,7 @@ sub recreate_db_tables() {
     $create .= ")";
     $r = $dbh->do( $create );
     unless( $r ) {
-      print "$PRG: create table $tab:\n  $DBI::errstr\n";
+      print "$PRG: create table $tab:\n  " . $dbh->errstr;
       return;
     }
     my $df = $vdirs->{$tab}{defaultfile} if exists $vdirs->{$tab}{defaultfile};
@@ -1136,7 +1210,8 @@ sub recreate_db_tables() {
     }
   }
   return;
-}
+
+} # recreate_db_tables()
 
 ########################################################################
 # print_file( FH, fnam, verbose );
@@ -1166,6 +1241,7 @@ sub print_file() {
   my @descs;
   my @isref;
   my @flags;
+  my @enums;
   my $select = "select ";
   my $retval = 2;
 
@@ -1183,6 +1259,7 @@ sub print_file() {
       push @descs, $cols->{$col}{desc};
       push @isref, exists $cols->{$col}{ref} ? $cols->{$col}{ref} : undef;
       push @flags, exists $cols->{$col}{flags} ? $cols->{$col}{flags} : undef;
+      push @enums, exists $cols->{$col}{enums} ? $cols->{$col}{enums} : undef;
       $select .=  "$col,";
     }
   chop $select;
@@ -1192,11 +1269,11 @@ sub print_file() {
   my $st;
   $st = $dbh->prepare( $select );
   unless( $st ) {
-    print $FH "$PRG: can't prep print query '$vwd':\n  $DBI::errstr\n";
+    print $FH "$PRG: can't prep print query '$vwd':\n  " . $dbh->errstr;
     return 2;
   }
   unless( $st->execute( $fnam ) ) {
-    print $FH "$PRG: can't exec print query 1 '$vwd' :\n  $DBI::errstr\n";
+    print $FH "$PRG: can't exec print query 1 '$vwd' :\n  " . $dbh->errstr;
     return 2;
   }
   @values = $st->fetchrow_array();
@@ -1204,7 +1281,7 @@ sub print_file() {
 
   if( $vdirs->{$vwd}{defaultfile} and $vdirs->{$vwd}{defaultfile} ne $fnam ) {
     unless( $st->execute( $vdirs->{$vwd}{defaultfile} ) ) {
-      print $FH "$PRG: can't exec print query 2 '$vwd':\n  $DBI::errstr\n";
+      print $FH "$PRG: can't exec print query 2 '$vwd':\n  " . $dbh->errstr;
       return 2;
     }
     @defaults = $st->fetchrow_array();
@@ -1220,7 +1297,7 @@ sub print_file() {
       $retval = 0;
       for( my $i=0; $i<= $#values; $i++ ) {
 	print $FH &var_value_s( $maxvarlen, $vars[$i], $values[$i], 
-				$defaults[$i], $flags[$i],
+				$defaults[$i], $flags[$i], $enums[$i],
 				@defaults ? 1 : 0
 			      );
       }
@@ -1274,32 +1351,37 @@ sub print_file() {
 	  my $def;
 	  if( defined $defaults[$i] and defined $flags[$i] ) {
 	    $def = build_flags( $defaults[$i], $flags[$i] );
+	  }elsif( defined $defaults[$i] and defined $enums[$i] ) {
+	    $def = build_enums( $defaults[$i], $enums[$i] );
 	  }elsif( defined $defaults[$i] ) {
 	    $def = $defaults[$i];
 	  }
 	  print $FH  "# default: ";
 	  print $FH  defined $def ? "$def\n#\n" : "$em\n#\n";
 	}
-	print $FH &var_value_v( $vars[$i],$values[$i],$isref[$i],$flags[$i] );
+	print $FH &var_value_v( $vars[$i],$values[$i],$isref[$i],
+				$flags[$i],$enums[$i] );
       }
       print $FH "\n# end of file '$fnam'\n";
     }
   }
   return $retval;
-}
+
+} # print_file()
 
 ########################################################################
-# var_value_v( var, value, ref, flags )
+# var_value_v( var, value, ref, flags, enums )
 # return a var = value string for verbose print_file()
 #   var:	variable name (long version for cat/vi)
 #   value:	the value of var or undef
 #   ref:	the dir/table referenced by this var or undef
 #   flags:	anon hashref with flags setup from vdir or undef
+#   enums:	anon hashref with enums setup from vdir or undef
 # return:
 # 	the string to be printed
 #
 sub var_value_v() {
-  my ($var, $value, $ref, $flags ) = @_;
+  my ($var, $value, $ref, $flags, $enums ) = @_;
   my $s = '';
   if( defined $ref ) {
     # query db
@@ -1310,11 +1392,11 @@ sub var_value_v() {
     $s .= "#   This is a reference to a file in dir '$ref'.\n";
     $st = $dbh->prepare( $select );
     unless( $st ) {
-      $s .= "$PRG: can't prep var query '$ref':\n  $DBI::errstr\n";
+      $s .= "$PRG: can't prep var query '$ref':\n  " . $dbh->errstr;
       return $s;
     }
     unless( $st->execute( ) ) {
-      $s .= "$PRG: can't exec var query '$ref' :\n  $DBI::errstr\n";
+      $s .= "$PRG: can't exec var query '$ref' :\n  " . $dbh->errstr;
       return $s;
     }
     $s .= "$var = \n" unless defined $value;
@@ -1370,34 +1452,72 @@ sub var_value_v() {
     }else{
       $s .= "#\n$var = \n#$var = {\n$on$off#}\n";
     }
+
+  }elsif( defined $enums ) {
+    my $i;
+    my $maxlen = 0;
+    foreach $i (sort keys(%{$enums}) ) {
+      if( length( $enums->{$i}[0] ) > $maxlen ) {
+	$maxlen = length( $enums->{$i}[0] );
+      }
+    }
+    $s .= "# Enums:\n";
+    my $selected = "  Selected:\n";
+    my $avail = "  Available:\n";
+    if( defined $value and !exists $enums->{$value} ) {
+      $selected .= "    *unknown-enum-value*\n";
+    }
+    foreach $i (sort keys(%{$enums}) ) {
+      my $first = 1;
+      foreach my $dscline (split '\n', $enums->{$i}[1] ) {
+	if( $first ) {
+	  $first = 0;
+	  $s .= sprintf( "#  %${maxlen}s: %s\n",$enums->{$i}[0], $dscline );
+	}else{
+	  $s .= sprintf( "#  %${maxlen}s  %s\n", ' ', $dscline );
+	}
+      }
+      if( defined $value and $value == $i) {
+	$selected .= "    $enums->{$i}[0]\n";
+      }else{
+	$avail .= "    $enums->{$i}[0]\n";
+      }
+    }
+    $s .= "#\n$var = {\n$selected$avail}\n";
+
   }else{
     $s .= "$var = ";
     $s .= "$value" if defined $value;
     $s .= "\n";
   }
   return $s;
-}
+
+} # var_value_v()
 
 ########################################################################
-# var_value_s( aligned, var, value, flags, hasdefault )
+# var_value_s( aligned, var, value, flags, enums, hasdefault )
 # return a var = value string for short output (sum & vgrep)
 #   maxvarlen:	if not 0: align all '=' using $maxvarlen, else: no alignment
 #   var:	variable name (long version for cat/vi)
 #   value:	the value of var or undef
 #   default:	the default value of var or undef
 #   flags:	anon hashref with flags setup from vdir or undef
+#   enums:	anon hashref with enums setup from vdir or undef
 #   hasdefault:	1: we have a defaults file  0: we don't have
 # return:
 # 	the string to be printed
 #
 sub var_value_s() {
-  my ( $maxvarlen, $var, $value, $default, $flags, $hasdefault ) = @_;
+  my ($maxvarlen,$var,$value,$default,$flags,$enums,$hasdefault) = @_;
   my $s = '';
   my $i;
 
   if( defined $flags ) {
     $value = build_flags( $value, $flags );
     $default = build_flags( $default, $flags );
+  }elsif( defined $enums ) {
+    $value = build_enums( $value, $enums );
+    $default = build_enums( $default, $enums );
   }
 
   if( $maxvarlen ) {
@@ -1415,7 +1535,8 @@ sub var_value_s() {
     $s .= defined $value ? "= $value\n" : "= *unset*\n";
   }
   return $s;
-}
+
+} # var_value_s()
 
 ########################################################################
 # build_flags( value, flags )
@@ -1444,7 +1565,36 @@ sub build_flags() {
     chop $s;	# chop ,
   }
   return $s;
-}
+
+} # build_flags()
+
+########################################################################
+# build_enums( value, enums )
+# return a string containing the enum set in value
+#   value:	the value of var or undef
+#   enums:	anon hashref with enums setup from vdir or undef
+# return:
+# 	the string of set enum if enum is set
+#	undef if - value is undef
+#		 - enum is undef
+#	         - value is not contained in enums
+#
+sub build_enums() {
+  my ( $value, $enums ) = @_;
+  my $s;
+  my $i;
+
+  if( defined $enums and defined $value ) {
+    if( exists $enums->{$value} ) {
+      $s = "$enums->{$value}[0]";
+    }else{
+      $s = "*unknown-enum-value*";
+    }
+  }
+  return $s;
+
+} # build_enums()
+
 
 ########################################################################
 # get_who_refs_me( dir, file )
@@ -1471,11 +1621,11 @@ sub get_who_refs_me() {
 
     $st = $dbh->prepare( $select );
     unless( $st ) {
-      push @res,"$PRG: can't prep wrefs query '$file':\n  $DBI::errstr\n";
+      push @res,"$PRG: can't prep wrefs query '$file':\n  " . $dbh->errstr;
       return @res;
     }
     unless( $st->execute( ) ) {
-      push @res,"$PRG: can't exec wrefs query '$file':\n  $DBI::errstr\n";
+      push @res,"$PRG: can't exec wrefs query '$file':\n  " . $dbh->errstr;
       return @res;
     }
     my $reffile;
@@ -1490,7 +1640,7 @@ sub get_who_refs_me() {
 ########################################################################
 # create_sql_from_file( tempfile, dir, vfile, insert_flag );
 #
-# tmpfile:	Absolute pathe to temporary file on local disk holding
+# tmpfile:	Absolute path to temporary file on local disk holding
 #		the edited parameters
 # vdir:		exisiting virtual dir (table)
 # vfile:	A file (db-row) for which to generate the $sql SQL code
@@ -1565,8 +1715,6 @@ sub create_sql_from_file( ) {
 
       my $col = $varcol{$var};
       my $vlen = length( $val );
-      $val =~ s/\\/\\\\/g;	# protect db specific chars 
-      $val =~ s/\'/\\\'/g;
       if(  $vlen > 0 ) {
 	# check types
 	if( defined $cols->{$col}{ref} ) {
@@ -1590,13 +1738,13 @@ sub create_sql_from_file( ) {
 	  my $dbval;
 	  $st = $dbh->prepare("select $rfnc from $rdir where $rfnc=?");
 	  unless( $st ) {
-	    $err = "$PRG: internal error: prepare 'exist' query '$rdir':\n";
-  	    $err .= "  $DBI::errstr\n";
+	    $err = "$PRG: internal error: prepare 'exist' query '$rdir':\n  ";
+  	    $err .= $dbh->errstr;
 	    last MAIN;
 	  }
 	  unless( $st->execute( $val ) ) {
-	    $err = "$PRG: internal error: exec 'exist' query '$rdir':\n";
-  	    $err .= "  $DBI::errstr\n";
+	    $err = "$PRG: internal error: exec 'exist' query '$rdir':\n  ";
+  	    $err .= $dbh->errstr;
 	    last MAIN;
 	  }
 	  $dbval = $st->fetchrow_array();
@@ -1629,9 +1777,9 @@ sub create_sql_from_file( ) {
 	  }
 	  if( $insert_flag ) {
 	    $sql1 .= "$col,";
-	    $sql2 .= "'$val',";
+	    $sql2 .= $dbh->quote( $val ) . ",";
 	  }else{
-	    $sql1 .= "$col='$val',";
+	    $sql1 .= "$col=" . $dbh->quote( $val ) . ",";
 	  }
 	  $filevars{$col}       = $val;
 	  $filevarslineno{$col} = $lineno;
@@ -1680,7 +1828,52 @@ sub create_sql_from_file( ) {
 	      $err = "line $lineno: flags must start with '{'";
 	      last MAIN;
 	    }
-	  }else{				# no flags, normal int
+	  }elsif( exists $cols->{$col}{enums} ) {	# enums: process the enums
+
+	    if( $val eq '{' ) {
+	      $val = 'NULL';
+	      my $mode = '{';
+	      my $l;
+	      my $enumfound;
+	    ENUMS: while( defined ( $l = <TF> ) ) {
+		chop( $l );
+		$lineno++;
+		$l =~ s/\s*$//;			# remove trailing space
+		$l =~ s/^\s*//;			# remove leading space
+		next ENUMS if $l =~ /^$/;	# skip empty lines
+		next ENUMS if $l =~ /^\#.*/;	# skip comment lines
+		if( $l eq 'Selected:' )  { $mode = 'sel'; next ENUMS; }
+		if( $l eq 'Available:' ) { $mode = 'ava'; next ENUMS; }
+		if( $l eq '}' ) 	 { $mode = '}';   last ENUMS; }
+		$enumfound = 0;
+		foreach my $enumval ( keys( %{$cols->{$col}{enums}} ) ) {
+		  if( $cols->{$col}{enums}{$enumval}[0] eq $l ) {
+		    $enumfound = 1;
+		    if( $mode eq 'sel' ) {
+		      if( $val eq 'NULL' ) {
+			$val = $enumval;
+		      }else{
+			$err = "line $lineno: only one elem may be selected for '$var'";
+			last MAIN;
+		      }
+		    }
+		    last;
+		  }
+		}
+		unless( $enumfound ) {
+		  $err = "line $lineno: unknown enum tag '$l' for '$var'";
+		  last MAIN;
+		}
+	      } # loop ENUMS
+	      if( $mode ne '}' ) {
+		$err = "line $lineno: missing '}' from enums section";
+		last MAIN;
+	      }
+	    }else{
+	      $err = "line $lineno: enums must start with '{'";
+	      last MAIN;
+	    }
+	  }else{				# no flags,no enums, normal int
 	    unless( $val =~ /^-?\d+$/ ) {
 	      $err = "line $lineno: value not an integer"; 
 	      last MAIN;
@@ -1724,12 +1917,12 @@ sub create_sql_from_file( ) {
 	  my $dbval;
 	  $st = $dbh->prepare( "select cidr '$val'" );
 	  unless( $st ) {
-	    $err = "$PRG: internal error: select cidr\n";
-	    $err .= "  $DBI::errstr\n";
+	    $err = "$PRG: internal error: select cidr\n  ";
+	    $err .= $dbh->errstr;
 	    last MAIN;
 	  }
 	  unless( $st->execute(  ) ) {
-	    $err = "$DBI::errstr\n";
+	    $err = $dbh->errstr;
 	    last MAIN;
 	  }
 	  ($dbval) = $st->fetchrow_array();
@@ -1750,12 +1943,12 @@ sub create_sql_from_file( ) {
 	  my $dbval;
 	  $st = $dbh->prepare( "select inet '$val'" );
 	  unless( $st ) {
-	    $err = "$PRG: internal error: select inet\n";
-	    $err .= "  $DBI::errstr\n";
+	    $err = "$PRG: internal error: select inet\n  ";
+	    $err .= $dbh->errstr;
 	    last MAIN;
 	  }
 	  unless( $st->execute(  ) ) {
-	    $err = "$DBI::errstr\n";
+	    $err = $dbh->errstr;
 	    last MAIN;
 	  }
 	  ($dbval) = $st->fetchrow_array();
@@ -1836,13 +2029,13 @@ sub create_sql_from_file( ) {
 	$st = $dbh->prepare(
 		"select $fnc from $vwd where $col=? and $fnc != '$vfile'");
 	unless( $st ) {
-	  $err = "$PRG: internal error: prepare 'uniq' query '$vwd':\n";
-	  $err .= "  $DBI::errstr\n";
+	  $err = "$PRG: internal error: prepare 'uniq' query '$vwd':\n  ";
+	  $err .= $dbh->errstr;
 	  last;
 	}
-	unless( $st->execute( $filevars{$col} ) ) {
-	  $err = "$PRG: internal error: exec 'uniq' query '$vwd':\n";
-	  $err .= "  $DBI::errstr\n";
+	unless( $st->execute( "$filevars{$col}" ) ) {
+	  $err = "$PRG: internal error: exec 'uniq' query '$vwd':\n  ";
+	  $err .= $dbh->errstr;
 	  last;
 	}
 	while( ($dbval) = $st->fetchrow_array() ) {
@@ -1859,7 +2052,8 @@ sub create_sql_from_file( ) {
     }
   }
   return ( $lineno, $err, "$sql1$sql2" );
-}
+
+} # create_sql_from_file()
 
 ########################################################################
 # want_to_edit_again( errortext )
@@ -1899,6 +2093,7 @@ sub do_vgrep() {
   my @values;
   my @defaults;
   my @flags;
+  my @enums;
   my $fnam;
   my $em = "*unset*";
   my $hasdefault;
@@ -1917,6 +2112,7 @@ sub do_vgrep() {
       push @vars,  $var;
       push @dbvars,$col;
       push @flags, exists $cols->{$col}{flags} ? $cols->{$col}{flags} : undef;
+      push @enums, exists $cols->{$col}{enums} ? $cols->{$col}{enums} : undef;
       $select .=  "$col,";
       $seldef .=  "$col,";
     }
@@ -1930,11 +2126,11 @@ sub do_vgrep() {
     my $st;
     $st = $dbh->prepare( $seldef );
     unless( $st ) {
-      print $OUT "$PRG: prep vgrep default query '$vwd':\n  $DBI::errstr\n";
+      print $OUT "$PRG: prep vgrep default query '$vwd':\n  " . $dbh->errstr;
       return;
     }
     unless( $st->execute( $vdirs->{$vwd}{defaultfile} ) ) {
-      print $OUT "$PRG: exec vgrep default query '$vwd':\n  $DBI::errstr\n";
+      print $OUT "$PRG: exec vgrep default query '$vwd':\n  " . $dbh->errstr;
       return;
     }
     @defaults = $st->fetchrow_array();
@@ -1945,11 +2141,11 @@ sub do_vgrep() {
   my $st;
   $st = $dbh->prepare( $select );
   unless( $st ) {
-    print $OUT "$PRG: prep vgrep query '$vwd':\n  $DBI::errstr\n";
+    print $OUT "$PRG: prep vgrep query '$vwd':\n  " . $dbh->errstr;
     return;
   }
   unless( $st->execute() ) {
-    print $OUT "$PRG: exec vgrep query 1 '$vwd' :\n  $DBI::errstr\n";
+    print $OUT "$PRG: exec vgrep query 1 '$vwd' :\n  " . $dbh->errstr;
     return;
   }
 
@@ -1965,7 +2161,8 @@ sub do_vgrep() {
 	}
 	
 	my $line = &var_value_s( 0, $vars[$i], $values[$i], 
-				 $defaults[$i], $flags[$i], $hasdefault
+				 $defaults[$i], $flags[$i], $enums[$i],
+				 $hasdefault
 			       );
 	printf $OUT "%${fnlen}s: %s", $fnam, $line if $line =~ /$pattern/i;
       }
@@ -1975,6 +2172,388 @@ sub do_vgrep() {
   
   return;
 }
+
+
+########################################################################
+########################################################################
+## obejct orientated interface: the access class for config database
+########################################################################
+########################################################################
+
+########################################################################
+# new();
+# contructor for DBIx::FileSystem access class
+# parameter:
+#       dbconn: database connect string used for DBI database connect
+#	dbuser: database user
+#     dbpasswd: database user's password
+#    progdbver: program's databaase layout version string
+#
+# return: the object
+#
+sub new {
+  my $class = shift;
+  my %params = @_;
+  my $self = {};
+  bless( $self, $class );
+
+  $self->{dbh} = undef;
+  $self->{err} = "Ok";
+
+  # initialize object
+ FINI: while( 1 ) {
+    if( exists $params{dbconn} and defined( $params{dbconn} ) ){
+      $self->{dbconn} = $params{dbconn};
+    }else{
+      $self->{dbconn} = undef;
+      $self->{err} = "parameter 'dbconn' undefined";
+      last FINI;
+    }
+    if( exists $params{progdbver} and defined( $params{progdbver} ) ) {
+      $self->{progdbver} = $params{progdbver};
+    }else{
+      $self->{progdbver} = undef;
+      $self->{err} = "parameter 'progdbver' undefined";
+      last FINI;
+    }
+    $self->{dbh} = DBI->connect( $self->{dbconn}, 
+				 $params{dbuser}, $params{dbpasswd}, 
+				 { PrintError => 0, AutoCommit => 1, 
+				   ChopBlanks =>1 } );
+    unless( $self->{dbh} ) {
+      $self->{err} = "connect: " . $DBI::errstr;
+      last FINI;
+    }
+    last FINI;
+  }
+
+  return $self;
+
+} # new()
+
+########################################################################
+# DESTROY();
+# parameter: none
+#
+# return:  nothing
+#
+sub DESTROY {
+  my $self = shift;
+
+  $self->{dbh}->disconnect() if defined $self->{dbh};
+
+  $self->{dbh} = undef;
+  $self->{dbconn} = undef;
+  $self->{progdbver} = undef;
+  $self->{err} = "object destroyed";
+
+  return;
+
+} # DESTROY()
+
+########################################################################
+# database_bad();
+# check if the database connection is ok. If not, set an errormessage into 
+# the errorbuffer
+#
+# parameter: none
+#
+# return:  0: database ok
+#	   1: database wrong
+#
+sub database_bad {
+  my $self = shift;
+  my $ret = 1;
+
+  if( defined $self->{dbh} ) {	
+    # check version number
+    my $st = $self->{dbh}->prepare( 
+		       "SELECT value FROM tablestatus WHERE tag='version'" );
+    if( $st ) {
+      if( $st->execute() ) {
+	my ($dbdbver) = $st->fetchrow_array();
+	if( $dbdbver eq $self->{progdbver} ) {
+	  $ret = 0;
+	}else{
+	  $self->{err} = 
+	      "version mismatch: program <--> db ('$self->{progdbver}' <--> '$dbdbver')";
+	}
+	$st->finish();
+      }else{
+	$self->{err} = "exec query dbversion: " . $self->{dbh}->errstr;
+      }
+    }else{
+      $self->{err} = "prepare qry dbversion: " . $self->{dbh}->errstr;
+    }
+  }
+  if( $ret ) {
+    $self->{dbh}->disconnect() if defined $self->{dbh};
+    $self->{dbh} = undef;
+  }
+  return $ret;
+
+} # database_bad()
+
+########################################################################
+# get_err();
+# read the last error message from the error buffer
+# parameter: none
+#
+# return:  last errorstring
+#
+sub get_err {
+  my $self = shift;
+  return $self->{err};
+
+} # get_err()
+
+########################################################################
+# get_conf_by_var();
+#
+# parameter: 
+#   in:
+#	$dir:		the directory (table) to search in
+#	$defaultfname:	the filename of the defaultfile if availalble,
+#			else undef
+#	$fnamcol:	the column which contains the symbolic filename
+#   in/out:
+#	\%vars:		a hashref pointing to a hash containing the column
+#			names to fetch as a key, values will be set by function
+#   in: \%searchvars	a hashref pointing to a hash containing the values to
+#			to use as a filter (SQL WHERE part). Key: column name
+#			value: The value or an anon array-ref with
+#			   [ 'compare-operator', 'value-to-search-for' ]
+#
+# return:  OK		Ok, one file found, \%vars filled with values from db
+#	   NOFILE	no file found, \%vars's values will be undef
+#	   NFOUND	more than one file found, \%vars's values will be undef
+#	   ERROR	error, call method get_err to pick the error message
+#			\%vars's values will be undef
+#
+sub get_conf_by_var {
+  my $self = 	    shift;
+  my $dir = 	    shift;
+  my $defaultfname =shift;
+  my $fnamcol =	    shift;
+  my $vars = 	    shift;
+  my $searchvars =  shift;
+
+  my $r = ERROR;
+  my $st;
+
+  unless( defined $self->{dbh} ) {
+    $self->{err} = "DBIx::FileSystem object not initialized";
+    return $r;
+  }
+
+  # check parameter
+  if( !defined $dir or $dir eq '' ) {
+    $self->{err} = "get_conf_by_var(): parameter 'dir' is empty";
+    return $r;
+  }
+  if( !defined $fnamcol or $fnamcol eq '' ) {
+    $self->{err} = "get_conf_by_var(): parameter 'fnamcol' is empty";
+    return $r;
+  }
+  if( ref( $vars ) ne 'HASH' ) {
+    $self->{err} = "get_conf_by_var(): parameter 'vars' is no hashref";
+    return $r;
+  }
+  if( keys( %{$vars} ) == 0 ) {
+    $self->{err} = "get_conf_by_var(): hash 'vars' is empty";
+    return $r;
+  }
+  if( ref( $searchvars ) ne 'HASH' ) {
+    $self->{err} = "get_conf_by_var(): parameter 'searchvars' is no hashref";
+    return $r;
+  }
+  if( keys( %{$searchvars} ) == 0 ) {
+    $self->{err} = "get_conf_by_var(): hash 'searchvars' is empty";
+    return $r;
+  }
+
+  foreach my $v ( keys %{$vars} ) {
+    $vars->{$v} = undef;
+  }
+
+ DB: while( 1 ) {
+    my %extra;
+    my $qry = '';
+    my $res;
+
+    # check query parameters against defaultfile
+    if( defined $defaultfname ) {
+      foreach my $searchvar (keys %{$searchvars} ) {
+	$qry = "SELECT count($fnamcol) FROM $dir WHERE $searchvar" .
+	  $self->sqlize( $searchvars->{$searchvar} ) .
+	  " AND $fnamcol = '$defaultfname'";
+	$st = $self->{dbh}->prepare( "$qry" );
+	unless( $st ) {
+	  $self->{err} = "prepare extra qry: " . $self->{dbh}->errstr;
+	  last DB;
+	}
+	if( $st->execute() ) {
+	  ($res) = $st-> fetchrow_array();
+	  if( defined $res and $res == 1 ) {
+	    $extra{$searchvar} = " OR $searchvar IS NULL";
+	  }else{
+	    $extra{$searchvar} = "";
+	  }
+	  $st->finish();
+	}else{
+	  $self->{err} = "exec extra qry: " . $self->{dbh}->errstr;
+	  last DB;
+	}
+      }
+    }else{
+      foreach my $searchvar (keys %{$searchvars} ) {
+	$extra{$searchvar} = "";
+      }
+    }
+
+    # base query
+
+    $qry = "SELECT ";
+    foreach my $var (keys %{$vars} ) {
+      $qry .= "$var,";
+    }
+    chop $qry;
+    $qry .= " FROM $dir WHERE ";
+    my $rest = 0;
+    foreach my $searchvar (keys %{$searchvars} ) {
+      $qry .= " AND " if $rest;
+      $qry .= "( $searchvar" . $self->sqlize( $searchvars->{$searchvar} ) .
+	      "$extra{$searchvar} )";
+      $rest = 1 unless $rest;
+    }
+    ### print "qry: '$qry'\n";
+
+    $res = $self->{dbh}->selectall_arrayref( $qry, { Slice => {} } );
+    if( !defined $res or defined $self->{dbh}->{err} ) {
+      $self->{err} = "get_conf_by_var(): query: " . $self->{dbh}->errstr;
+      last DB;
+    }
+
+    if( @$res == 0 ) {
+      $self->{err} = "no file found";
+      $r = NOFILE;
+      last DB;
+    }elsif( @$res == 1 ) {
+      foreach my $col (keys %{$res->[0]} ) {
+	$vars->{$col} = $res->[0]->{$col};
+      }
+      $r = OK;
+    }else{
+      $self->{err} = "more than one file found";
+      $r = NFOUND;;
+      last DB;
+    }
+
+    # read defaults from defaultfile if necessary
+
+    if( defined $defaultfname ) {
+      my %sv = ( $fnamcol => $defaultfname );
+      my %v = %{$vars};
+      $r = $self->get_conf_by_var( $dir, undef, $fnamcol, \%v, \%sv );
+
+      if( $r == OK ) {
+	foreach my $var ( keys %v ) {
+	  $vars->{$var} = $v{$var} unless defined $vars->{$var};
+	}
+      }else{
+	if( $r == NOFILE ) {
+	  $self->{err} = "defaultfile '$dir/$defaultfname' not found";
+	}elsif( $r == NFOUND ) {
+	  $self->{err} = "more than one file '$dir/$defaultfname' found";
+	}
+	foreach my $v ( keys %{$vars} ) {
+	  $vars->{$v} = undef;
+	}
+	$r = ERROR;
+      }
+    }
+
+    last DB;
+
+  } # while( DB )
+
+  return $r;
+
+} # get_conf_by_var()
+
+########################################################################
+# sqlize();
+# build the right-hand-side of the WHERE part, incl. compare operator.
+# respect quoting of strings, integer values and 'undef' / NULL
+# parameter: 
+#	$val: the value to SQLize
+#
+# return:  the sqlized string
+#
+sub sqlize {
+  my $self = shift;
+  my $val = shift;
+  my $r;
+  if( ! defined $val ) {
+    $r = " IS NULL";
+  }elsif( ref( $val ) eq 'ARRAY' ) {
+    if( defined $val->[0] and defined $val->[1] ) {
+      if( $self->isanumber( $val->[1] ) ) {
+	$r = " $val->[0] $val->[1]";
+      }else{
+	$r = " $val->[0] " . $self->{dbh}->quote( $val->[1] );
+      }
+    }else{
+      $r = " IS NULL";
+    }
+  }else{
+    if( $self->isanumber( $val ) ) {
+      $r = "=$val";
+    }else{
+      $r = "=" . $self->{dbh}->quote( $val );
+    }
+  }
+
+  return $r;
+
+} # sqlize()
+
+
+########################################################################
+# isanumber();
+# check if $str is a number or not
+# parameter: 
+#	$str
+#
+# return:  0	$val is string
+# 	   1	$val is number
+#
+sub isanumber() {
+  my $self = shift;
+  my $str = shift;
+  my $r = 1;
+
+  if( !defined $str ) {
+    $r = 0;
+  }elsif( $str eq '' ) {
+    $r = 0;
+  }elsif( $str =~ / / ) {
+    $r = 0;
+  }elsif( $str =~ /infinity/i ) {
+    $r = 0;
+  }elsif( $str =~ /nan/i ) {
+    $r = 0;
+  }else{
+    $! = 0;
+    my ($num, $unparsed ) = POSIX::strtod( $str );
+    if( ($unparsed != 0) || $!) {
+      $r = 0;
+    }
+  }
+  return $r;
+
+} # isanumber()
+
 
 ########################################################################
 ########################################################################
@@ -1992,7 +2571,33 @@ DBIx::FileSystem - Manage tables like a filesystem
 
 =head1 SYNOPSIS
 
-  use DBIx::FileSystem;
+  ##############################################################
+  # access the data using the access class
+  ##############################################################
+  use DBIx::FileSystem qw( :symbols );
+
+  my $fs = new DBIx::FileSystem( dbconn => $DBCONN,
+				 dbuser => $DBUSER,
+				 dbpasswd => $DBPWD,
+				 progdbver => $PROGDBVER );
+
+  my %vars = ( column_1 => undef,	# columns to read from db
+	       column_2 => undef   );
+
+  my %searchvars = ( column_a => "myvalue",	# the WHERE part
+ 		     column_b => 1234,
+		     column_c => [ 'LIKE', 'abc%' ] );
+
+  $r = $fs->get_conf_by_var( $dir, $default_filename, $filename_column,
+			     \%vars, \%searchvars );
+  die $fs->get_err if $r != OK;
+
+
+  ##############################################################
+  # implement the interactive configure shell
+  ##############################################################
+
+  use DBIx::FileSystem qw( mainloop recreatedb );
   my %vdirs = 
   ( 
      table_one => 
@@ -2009,26 +2614,43 @@ DBIx::FileSystem - Manage tables like a filesystem
 
   if( $#ARGV==0 and $ARGV[0] eq 'recreatedb' ) {
     recreatedb(%vdirs, $PROGNAME, $VERSION, 
-	       $DBHOST, $DBUSER, $DBPWD);
+	       $DBCONN, $DBUSER, $DBPWD);
   }else{
     # start the command line shell
     mainloop(%vdirs, $PROGNAME, $VERSION, 
-	     $DBHOST, $DBUSER, $DBPWD, %customcmds );
+	     $DBCONN, $DBUSER, $DBPWD, %customcmds );
   }
 
-This synopsis shows the program (aka 'the shell') to manage the 
-database tables given in hash B<%vdirs>.
+
+
+The upper synopsis shows how to 
+access the data using the access class.
+The lower synopsis shows the program (aka 'the shell') to manage the 
+database tables given in hash B<%vdirs>. 
 
 =head1 DESCRIPTION
 
 The module DBIx::FileSystem offers you a filesystem like view to
 database tables. To interact with the database tables, FileSystem
-implements a command line shell which offers not only a subset of well
+implements:
+
+
+=over 4
+
+=item - 
+
+An access class to read the data edited by the shell.
+
+=item -
+
+A user interface as a command line shell which offers not only a subset of well
 known shell commands to navigate, view and manipulate data in tables, but
 also gives the convenience of history, command line editing and tab
 completion. FileSystem sees the database as a filesystem: each
 table is a different directory with the tablename as the directory
-name and each row in a table is a file within that directory. 
+name and each row in a table is a file within that directory.
+
+=back
 
 The motivation for FileSystem was the need for a terminal based
 configuration interface to manipulate database entries which are used
@@ -2046,12 +2668,173 @@ command line editing more comfortable, because perl offers only stub
 function calls for Term::ReadLine. Note: Term::ReadLine::Gnu requires
 the Gnu readline library installed.
 
-=head1 FUNCTIONS
+=head1 DATABASE LAYOUT
+
+FileSystem sees a table as a directory which contains zero or more
+files. Each row in the table is a file, where the filename is defined
+by a column. Each file holds some
+variable = value pairs. All files in a directory are of the same
+structure given by the table layout. A variable is an alias for a
+column name, the value of the variable is the contents of the
+database.
+
+When editing a file via the shell's 'vi' command,
+FileSystem generates a temporary configuration
+file with comments for each variable and descriptive variable names
+instead of column names. The variable names and comments are defined
+in B<%vdirs> hash as shown below. So, in the following description:
+
+    'directory' is a synonym for 'table'
+    'file'      is a synonym for 'row',
+    'variable'  is a synonym for 'column'
+
+=head2 DEFAULTFILE FUNCTION
+
+Each directory optionally supports a defaultfile. The idea: If a
+variable in a file has value NULL then the value of the defaultfile
+will be used instead. 
+The application using the database (for reading
+configuration data from it) has to take care of a defaultfile. The access
+class implented in DBIx::FileSystem handles a defaultfile correctly.
+
+FileSystem's shell knows about a defaultfile when viewing a file and shows the 
+values from the defaultfile when a variable contains NULL. A defaultfile
+can not be removed with 'rm'.
+
+The chell commands cat, sum, and vgrep show the usage of the default 
+value by showing '->'
+instead of '=' when printing content. Example: "MyVar -> 1234". 
+Here the value of MyVar is NULL in the database and the default value 
+(1234) from the defaultfile is printed.
+
+
+=head1 METHODS (access class)
+
+new()
+
+Constructor. Parameters are:
+
+=over 4
+
+=item dbconn
+
+Mandatory.
+DBI connect string to an existing database. Depends on the underlying 
+database. Example: "dbi:Pg:dbname=myconfig;host=the_host";
+
+=item dbuser
+
+May be undef.
+DBI database user needed to connect to the database given in $DBCONN.
+
+=item dbpasswd
+
+May be undef.
+DBI password needed by $DBUSER to connect to the database given in $DBCONN.
+May be set to undef if no password checking is done.
+
+=item progdbver
+
+Mandatory.
+A character string with max. length of 16. Holds the version number of
+the database layout. See VERSION INFORMATION elsewhere in this document.
+
+=back
 
 
 
-recreatedb(%vdirs,$PROGNAME,$VERSION,$DBHOST,$DBUSER,$DBPWD);
+database_bad()
 
+Checks the status of the database (connected, right version number). Returns
+0 if database is ok, 1 otherwhise. Sets the errorstring for method 'get_err()'
+
+
+get_err()
+
+Returns the last error message as a string. May be a multiline string, 
+because some DBD drivers report errors in multiline format. The error message
+corresponds to the last DBIx::FileSystem method that has not returned OK.
+
+
+get_conf_by_var()
+
+Read data from the database.
+
+$r = get_conf_by_var( $dir, $default_fname, $fname_column, \%v, \%sv )
+
+Parameters are:
+
+=over 4
+
+=item $dir
+
+String. Input parameter. The name of the directory / database table to 
+search in.
+
+=item $default_fname
+
+String. Input parameter. The filename (symbolic name) of the defaultfile. 
+If no defaultfile is defined for this $dir: undef.
+See section "DEFAULTFILE FUNCTION" elsewhere in this document.
+
+=item $fname_column
+
+String. Input parameter. The name of the column holding the filename
+(symobic name) for the files. This parameter is called 'fnamcol' 
+in %vdir hash for the shell.
+
+=item \%v
+
+Hashref 'vars'. Input and output parameter. The columns we want to read 
+from the
+database. Keys: the column-names to fetch. Values: When get_conf_by_var() 
+returns OK: the values from database, else: undef. When calling with 
+$default_fname not undef, get_conf_by_var() will replace all database 
+NULL values in the result with the values found in $default_file.
+See section "DEFAULTFILE FUNCTION" elsewhere in this document.
+
+=item \%sv
+
+Hashref 'searchvars'. Input parameter. The filter critieria (SQL: WHERE part) 
+for searching the database. Each key-value pair results in one SQL compare
+term. If more than one key-value pair is given in %sv, the compare terms are
+ANDed. Keys: the column-names to use for the compare.
+Values: either the value itself (undef matches NULL in db) using compare
+operator '=', or an anon array-ref with $aref->[0] = the SQL compare 
+operator as a string and $aref->[1] = the value used for compare 
+(undef matches NULL in db). 
+Examples:
+
+                                        # --> SQL WHERE part:
+  my %sv = ( a => "myvalue",		# a = 'myvalue' AND
+	     b => 1234,			# b = 1234      AND
+             c => undef			# c IS NULL     AND
+	     d => [ 'LIKE', 'abc%' ] );	# d LIKE 'abc%' AND
+	     e => [ '<', 55 ] );	# e < 55
+	   );
+
+Note: When checking the search criteria against a defaultfile 
+(parameter $default_fname defined), then the SQL queries generated by
+DBIx::FileSystem are more complex than given in the example above.
+
+=back
+
+Return values:
+
+  OK      (0)  ok, one file found, result stored in %v's values.
+  NOFILE  (1)  no file found, %v's values are undef
+  NFOUND  (2)  more than one file found, %v's values are undef
+  ERRROR  (3)  error, %v's values are undef, error string set
+
+Import :symbols to use the short version of the symbolic names instead of 
+the integer values or use DBIx::FileSystem::OK, ...
+
+=head1 FUNCTIONS (interactive shell)
+
+recreatedb(%vdirs,$PROGNAME,$VERSION,$DBCONN,$DBUSER,$DBPWD);
+
+
+=over 2
 
 Recreate the tables given in B<%vdirs>. Will destroy any existing tables
 with the same name in the database including their contents. Will create
@@ -2060,11 +2843,16 @@ Tables not mentioned in B<%vdirs> will not be altered.
 The database itself will 
 not be dropped. Checks if B<%vdirs> is valid. Returns nothing.
 
+=back
 
-mainloop(%vdirs,$PROGNAME,$VERSION,$DBHOST,$DBUSER,$DBPWD,%customcmds);
+mainloop(%vdirs,$PROGNAME,$VERSION,$DBCONN,$DBUSER,$DBPWD,%customcmds);
+
+=over 2
 
 Start the interactive shell for the directory structure given in B<%vdirs>. 
 Returns when the user quits the shell. Checks if B<%vdirs> is valid. 
+
+=back
 
 =head2 parameters
 
@@ -2073,7 +2861,7 @@ Returns when the user quits the shell. Checks if B<%vdirs> is valid.
 =item %vdirs
 
 A hash of hashes describing the database layout which will be under 
-control of FileSystem. See DATABASE LAYOUT below for details.
+control of FileSystem. See DATABASE LAYOUT elsewhere in this document.
 
 =item $PROGNAME
 
@@ -2085,18 +2873,18 @@ prompt.
 A character string with max. length of 16. Holds the version number of
 the database layout. See VERSION INFORMATION below for details.
 
-=item $DBHOST
+=item $DBCONN
 
 DBI connect string to an existing database. Depends on the underlying 
 database. Example: "dbi:Pg:dbname=myconfig;host=the_host";
 
 =item $DBUSER
 
-DBI database user needed to connect to the database given in $DBHOST.
+DBI database user needed to connect to the database given in $DBCONN.
 
 =item $DBPWD
 
-DBI password needed by $DBUSER to connect to the database given in $DBHOST.
+DBI password needed by $DBUSER to connect to the database given in $DBCONN.
 May be set to undef if no password checking is done.
 
 =item %customcmds
@@ -2142,47 +2930,6 @@ Do not modify!
 Please see 'count' command in the example 'pawactl' how to implement custom
 commands. See the source of DBIx::FileSystem how to implement commands.
 
-=head1 TRANSACTIONS
-
-FileSystem uses autocommit when talking with the database. All operations
-done by FileSystem consist of one single SQL command.
-
-=head1 DATABASE LAYOUT
-
-FileSystem sees a table as a directory which contains zero or more
-files. Each row in the table is a file, where the filename is defined
-by a column configured with the B<%vdirs> hash. Each file holds some
-variable = value pairs. All files in a directory are of the same
-structure given by the table layout. A variable is an alias for a
-column name, the value of the variable is the contents of the
-database.
-
-When editing a file FileSystem generates a temporary configuration
-file with comments for each variable and descriptive variable names
-instead of column names. The variable names and comments are defined
-in B<%vdirs> hash as shown below. So, in the following description:
-
-    'directory' is a synonym for 'table'
-    'file'      is a synonym for 'row',
-    'variable'  is a synonym for 'column'
-
-=head2 DEFAULTFILE FUNCTION
-
-Each directory optionally supports a defaultfile. The idea: If a
-variable in a file has value NULL then the value of the defaultfile
-will be used instead. The application using the database (for reading
-configuration data from it) has to take care of a defaultfile.
-
-FileSystem knows about a defaultfile when viewing a file and shows the 
-values from the defaultfile when a variable contains NULL. A defaultfile
-can not be removed with 'rm'.
-
-cat, sum, and vgrep show the usage of the default value by showing '->'
-instead of '=' when printing content. Example: "MyVar -> 1234". 
-Here the value of MyVar is NULL in the database and the default value 
-(1234) from the defaultfile is printed.
-
-
 =head2 B<%vdirs hash>
 
 The B<%vdirs> hash defines the database layout. It is a hash of hashes.
@@ -2195,7 +2942,7 @@ The B<%vdirs> hash defines the database layout. It is a hash of hashes.
 
 The DIRECTORY_SETTING defines the layout of a directory (database table):
 
-  # mandatory: the directory name itself
+  # mandatory: the directory name: dirname = tablename
   dirname  => {			
 
     # mandatory: description of table
@@ -2251,7 +2998,7 @@ The DIRECTORY_SETTING defines the layout of a directory (database table):
 
 The COLUMN_SETTING defines the layout of a column (database column). 
 
-  # mandatory: the columnname itself
+  # mandatory: the columnname itself: colname = columnname
   colname => {			
 
     # mandatory: column type of this column 
@@ -2284,7 +3031,6 @@ The COLUMN_SETTING defines the layout of a column (database column).
     # when copying a file with 'cp'. When saving a
     # file the value entered must be uniq for this
     # variable in all files in the dir.
-    # (formerly known as 'delcp' option)
     uniq => 1,			
 
     # optional: when this option is set the variable
@@ -2296,6 +3042,20 @@ The COLUMN_SETTING defines the layout of a column (database column).
     flags => { bitnumber => [ "flagname", "flag description" ],
 	       bitnumber => [ "flagname", "flag description" ],
 	       # more flags settings ...
+	     }
+
+    # optional: when this option is set the variable
+    # behaves like a enum type variable based on type 'int'.
+    # Each enum entry in 'enums' has an integer value 'enumvalue',
+    # a one word enum name 'enumname' and a long enum description.
+    # The possible values of this variable are 'empty' or
+    # one of the symbolic 'enumnames', corresponding to
+    # NULL or the integer 'enumvalue' in the database. 
+    # The variable's column  type COLUMN_TYPE must be integer: 
+    # type => 'int', see below.
+    enums => { enumvalue => [ "enumname", "enum description" ],
+	       enumvalue => [ "enumname", "enum description" ],
+	       # more enum settings ...
 	     }
 
     # mandatory: Descriptive long variable name 
@@ -2562,6 +3322,7 @@ FILE will not be referenced by anyone.
 =back
 
 
+
 =head1 BUGS
 
 =over 4
@@ -2579,11 +3340,20 @@ composite primary keys currently not supported
 The database types 'cidr' and 'inet' are tested with Postgres database
 and are expected to work with Postgres only.
 
+=item -
+
+Some database systems dislike the way, DBI uses for quoting the single quote
+(Method DBI::quote()). They issue a warning when updating or inserting data
+using quoted quotes. Users of the shell will see this warning when saving 
+a new or existing file using shell's vi command. PostgreSQL version 8+ is known
+to behave like this.
+
 =back
+
 
 =head1 AUTHOR
 
-Alexander Haderer	alexander.haderer@loescap.de
+Alexander Haderer	afrika@cpan.org
 
 =head1 SEE ALSO
 
