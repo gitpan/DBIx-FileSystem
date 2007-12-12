@@ -22,82 +22,10 @@
 # Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 # Last Update:		$Author: marvin $
-# Update Date:		$Date: 2007/12/10 17:15:46 $
+# Update Date:		$Date: 2007/12/12 15:24:50 $
 # Source File:		$Source: /home/cvsroot/tools/FileSystem/FileSystem.pm,v $
-# CVS/RCS Revision:	$Revision: 1.20 $
+# CVS/RCS Revision:	$Revision: 1.21 $
 # Status:		$State: Exp $
-# 
-# CVS/RCS Log:
-# $Log: FileSystem.pm,v $
-# Revision 1.20  2007/12/10 17:15:46  marvin
-# - fixed docs
-#
-# Revision 1.19  2007/12/07 17:15:19  marvin
-# - finalized enum, access class and examples
-#
-# Revision 1.18  2007/12/04 18:27:22  marvin
-# - new directory examples
-# - bug fixes: handling quotes in SQL
-# - addes access class
-#
-# Revision 1.17  2007/11/27 16:51:34  marvin
-# - added new int type 'enum'
-# - beginning to add config access class and its testing
-#
-# Revision 1.16  2007/11/15 17:19:09  marvin
-# - added int option 'enums' to FileSystem module and pawactl example
-#
-# Revision 1.15  2007/08/09 15:13:23  marvin
-# - bugfix: display of defaultvalues from defaultfile wrong (cat/vi)
-# - pawactl: setup some more usefull sample values
-#
-# Revision 1.14  2007/06/15 13:27:40  marvin
-# - added bitfield/flags type as an extension of type 'int' (option flags =>)
-# - added Postgres speicific types cidr and inet
-# - minor fixes in code and docs
-#
-# Revision 1.13  2004/05/28 14:32:43  marvin
-# - rename delcp --> uniq
-# - new command: vgrep
-# - command 'new' removed
-#
-# Revision 1.12  2004/01/29 19:16:45  marvin
-# - delcp option now also checks for uniqueness
-#
-# Revision 1.11  2003/09/22 14:56:55  marvin
-# fixed deprecated use of refs
-#
-# Revision 1.10  2003/08/11 13:58:27  marvin
-# extended %vdirs check at startup
-#
-# Revision 1.9  2003/07/21 15:29:34  marvin
-# added missing t/use.t to MANIFEST
-#
-# Revision 1.8  2003/07/17 17:32:24  marvin
-# pawactl custom command example hello --> count
-#
-# Revision 1.7  2003/07/16 18:35:45  marvin
-# updated doku
-#
-# Revision 1.6  2003/07/16 18:32:33  marvin
-# Added custom commands
-# valok and rmcheck now get $dbh param
-#
-# Revision 1.5  2003/07/11 17:59:17  marvin
-# valok now gets additional parameter: a hashref of all values read from file
-#
-# Revision 1.4  2003/07/11 15:40:56  marvin
-# multiline descriptions, cp now checks filename
-#
-# Revision 1.3  2003/05/09 18:09:59  afrika
-# rename t/dummy.t to t/use.t
-#
-# Revision 1.2  2003/05/08 18:26:06  afrika
-# added t/dummy.t dummy test
-#
-# Revision 1.1.1.1  2003/04/09 11:07:10  marvin
-# Imported Sources
-#
 #
 
 package DBIx::FileSystem;
@@ -114,7 +42,7 @@ use constant {
   ERROR  => 3	# nothing found, errorstring set
 };
 
-$DBIx::FileSystem::VERSION = '1.5';
+$DBIx::FileSystem::VERSION = '1.6';
 
 @ISA = qw( Exporter );
 @EXPORT = qw( );

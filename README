@@ -261,6 +261,9 @@ CHANGES:
 	- added access class for database values, the access function 
 	  respects the defaultfile function
 
+1.6	12 dec 2007
+	- fixed locale dependency in test 01_access_isanumber.t
+
 COPYRIGHT:
 ----------
 
@@ -285,9 +288,9 @@ Please send comments and bug-reports to <afrika@cpan.org>
 CVS INFO:
 --------
 Last Update:		$Author: marvin $
-Update Date:		$Date: 2007/12/10 17:15:46 $
+Update Date:		$Date: 2007/12/12 15:24:50 $
 Source File:		$Source: /home/cvsroot/tools/FileSystem/README,v $
-CVS/RCS Revision:	$Revision: 1.17 $
+CVS/RCS Revision:	$Revision: 1.18 $
 Status:			$State: Exp $
 
 
