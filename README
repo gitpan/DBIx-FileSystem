@@ -264,6 +264,11 @@ CHANGES:
 1.6	12 dec 2007
 	- fixed locale dependency in test 01_access_isanumber.t
 
+1.7	13 dec 2007
+	- using multiple 'use constant' instead of single one to be
+	  compatible with older perls
+	- added missing requirement "Test::Simple" to Makefile.PL
+
 COPYRIGHT:
 ----------
 
@@ -288,9 +293,9 @@ Please send comments and bug-reports to <afrika@cpan.org>
 CVS INFO:
 --------
 Last Update:		$Author: marvin $
-Update Date:		$Date: 2007/12/12 15:24:50 $
+Update Date:		$Date: 2007/12/13 15:06:47 $
 Source File:		$Source: /home/cvsroot/tools/FileSystem/README,v $
-CVS/RCS Revision:	$Revision: 1.18 $
+CVS/RCS Revision:	$Revision: 1.19 $
 Status:			$State: Exp $
 
 

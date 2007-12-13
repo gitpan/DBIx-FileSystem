@@ -22,9 +22,9 @@
 # Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 #
 # Last Update:		$Author: marvin $
-# Update Date:		$Date: 2007/12/12 15:24:50 $
+# Update Date:		$Date: 2007/12/13 15:06:46 $
 # Source File:		$Source: /home/cvsroot/tools/FileSystem/FileSystem.pm,v $
-# CVS/RCS Revision:	$Revision: 1.21 $
+# CVS/RCS Revision:	$Revision: 1.22 $
 # Status:		$State: Exp $
 #
 
@@ -34,15 +34,13 @@ use strict;
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS );
 use Exporter;
 
-use constant {
-  # for access class: return results
-  OK     => 0,	# everything ok
-  NOFILE => 1,	# file not found in db
-  NFOUND => 2,	# more than one entry found
-  ERROR  => 3	# nothing found, errorstring set
-};
+# for access class: return results
+use constant OK     => 0;	# everything ok
+use constant NOFILE => 1;	# file not found in db
+use constant NFOUND => 2;	# more than one entry found
+use constant ERROR  => 3;	# nothing found, errorstring set
 
-$DBIx::FileSystem::VERSION = '1.6';
+$DBIx::FileSystem::VERSION = '1.7';
 
 @ISA = qw( Exporter );
 @EXPORT = qw( );
